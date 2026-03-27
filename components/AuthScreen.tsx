@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
+import type { FirebaseError } from 'firebase/app';
 import { 
   LogIn, 
   Layers, 
@@ -20,13 +21,34 @@ interface AuthScreenProps {
 
 export default function AuthScreen({ onLogin, onBack }: AuthScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const getAuthErrorMessage = (error: unknown) => {
+    const code = (error as FirebaseError | undefined)?.code;
+
+    switch (code) {
+      case 'auth/unauthorized-domain':
+        return 'This domain is not authorized in Firebase Auth. Add localhost under Authentication > Settings > Authorized domains.';
+      case 'auth/operation-not-allowed':
+        return 'Google sign-in is not enabled for this Firebase project. Enable the Google provider in Authentication > Sign-in method.';
+      case 'auth/popup-blocked':
+        return 'The browser blocked the Google sign-in popup. Allow popups for this site and try again.';
+      case 'auth/popup-closed-by-user':
+        return 'The Google sign-in popup was closed before authentication completed.';
+      default:
+        return (error as Error | undefined)?.message || 'Google sign-in failed.';
+    }
+  };
 
   const handleLogin = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
+
     try {
       await onLogin();
     } catch (error) {
       console.error('Login failed:', error);
+      setErrorMessage(getAuthErrorMessage(error));
       setIsLoading(false);
     }
   };
@@ -67,6 +89,14 @@ export default function AuthScreen({ onLogin, onBack }: AuthScreenProps) {
             </div>
 
             <div className="w-full space-y-4">
+              {errorMessage ? (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-left">
+                  <p className="text-[11px] font-mono uppercase tracking-wide text-red-200">
+                    {errorMessage}
+                  </p>
+                </div>
+              ) : null}
+
               {isLoading ? (
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-accent/20 text-accent border border-accent/30 font-mono font-bold text-sm">
@@ -76,6 +106,7 @@ export default function AuthScreen({ onLogin, onBack }: AuthScreenProps) {
                   <button 
                     onClick={() => {
                       setIsLoading(false);
+                      setErrorMessage(null);
                       onBack();
                     }}
                     className="w-full flex items-center justify-center gap-2 p-4 rounded-xl bg-white/5 text-white font-mono text-xs hover:bg-white/10 transition-all border border-white/10"
