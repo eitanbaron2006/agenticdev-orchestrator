@@ -996,18 +996,33 @@ export default function AgenticDevPage() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const lastNotifiedErrorCount = useRef(0);
 
-  // Scroll to bottom handler
+  const updateScrollButtonVisibility = useCallback(() => {
+    const container = scrollRef.current;
+
+    if (!container || activeTab !== 'chat' || messages.length === 0) {
+      setShowScrollButton(false);
+      return;
+    }
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const shouldShow = distanceFromBottom > 48;
+
+    setShowScrollButton(prev => (prev !== shouldShow ? shouldShow : prev));
+  }, [activeTab, messages.length]);
+
+  const handleChatScroll = useCallback(() => {
+    updateScrollButtonVisibility();
+  }, [updateScrollButtonVisibility]);
+
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: 'smooth'
       });
+      requestAnimationFrame(() => setShowScrollButton(false));
     }
   }, []);
-
-  // Handle scroll to show/hide button using IntersectionObserver
-  // Logic moved to setBottomRef callback for better performance and reliability
 
   // Project State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1042,49 +1057,6 @@ export default function AgenticDevPage() {
   const [exportStatus, setExportStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-
-  // Use a callback ref for the sentinel to ensure reliable observation
-  const setBottomRef = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-    }
-
-    if (node && scrollRef.current) {
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          // Use functional update to avoid stale closures and unnecessary re-renders
-          setShowScrollButton(prev => {
-            const shouldShow = !entry.isIntersecting;
-            return prev !== shouldShow ? shouldShow : prev;
-          });
-        },
-        {
-          root: scrollRef.current,
-          threshold: 0,
-          rootMargin: '0px 0px 50px 0px' // Slightly larger margin for smoother transition
-        }
-      );
-      observer.observe(node);
-      observerRef.current = observer;
-    }
-  }, []);
-
-  // Cleanup observer on unmount
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
-
-  // Ensure scroll button is hidden when there are no messages
-  useEffect(() => {
-    if (messages.length === 0) {
-      setShowScrollButton(false);
-    }
-  }, [messages.length]);
 
   const currentProjectAiModel = currentProject?.aiModel || DEFAULT_AI_MODEL;
 
@@ -1758,8 +1730,22 @@ export default function AgenticDevPage() {
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => updateScrollButtonVisibility());
     }
-  }, [messages]);
+  }, [messages, updateScrollButtonVisibility]);
+
+  useEffect(() => {
+    if (activeTab !== 'chat') {
+      setShowScrollButton(false);
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      updateScrollButtonVisibility();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, isProcessing, messages, updateScrollButtonVisibility]);
 
   useEffect(() => {
     if (isSettingsModalOpen && availableModels.length === 0 && !isLoadingModels) {
@@ -2369,6 +2355,7 @@ export default function AgenticDevPage() {
             <div className="flex-1 flex flex-col relative overflow-hidden">
               <div 
                 ref={scrollRef}
+                onScroll={handleChatScroll}
                 className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth pb-8 custom-scrollbar"
               >
                 {messages.length === 0 ? (
@@ -2408,8 +2395,6 @@ export default function AgenticDevPage() {
                       </div>
                     )}
                     
-                    {/* Scroll Sentinel */}
-                    <div ref={setBottomRef} className="h-4 w-full opacity-0" aria-hidden="true" />
                   </div>
                 )}
               </div>
