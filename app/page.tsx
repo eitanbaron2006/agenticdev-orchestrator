@@ -2774,29 +2774,65 @@ export default function AgenticDevPage() {
           )}
 
           {activeTab === 'tasks' && (
-            <div className="flex-1 flex flex-col bg-[#050505] p-4 md:p-8 overflow-y-auto custom-scrollbar">
-              <div className="max-w-4xl mx-auto w-full space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-mono font-bold tracking-tighter">Project Tasks</h2>
-                  {selectedTaskIds.size > 0 && (
-                    <button
-                      onClick={() => runTasks(tasks.filter(t => selectedTaskIds.has(t.id)))}
-                      disabled={isRunningTasks}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-black font-mono text-sm font-bold hover:bg-accent/90 transition-all disabled:opacity-50"
-                    >
-                      {isRunningTasks ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Play className="w-4 h-4 fill-current" />
+            <div className="flex-1 flex flex-col bg-[#050505] overflow-y-auto custom-scrollbar">
+              {/* Header Section */}
+              <div className="border-b border-white/5 bg-[#080808]/50 backdrop-blur-sm sticky top-0 z-10">
+                <div className="px-4 md:px-8 lg:px-12 py-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-mono font-bold tracking-tighter">Project Tasks</h2>
+                      <p className="text-xs font-mono opacity-40 mt-1">Manage and execute your development tasks</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {selectedTaskIds.size > 0 && (
+                        <button
+                          onClick={() => runTasks(tasks.filter(t => selectedTaskIds.has(t.id)))}
+                          disabled={isRunningTasks}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-black font-mono text-xs font-bold hover:bg-accent/90 transition-all disabled:opacity-50 shadow-lg shadow-accent/20"
+                        >
+                          {isRunningTasks ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Play className="w-4 h-4 fill-current" />
+                          )}
+                          Run Selected ({selectedTaskIds.size})
+                        </button>
                       )}
-                      Run Selected ({selectedTaskIds.size})
-                    </button>
+                    </div>
+                  </div>
+
+                  {/* Stats Bar */}
+                  {tasks.length > 0 && (
+                    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                        <span className="text-[10px] font-mono opacity-50 uppercase tracking-widest">Total</span>
+                        <span className="text-sm font-mono font-bold">{tasks.length}</span>
+                      </div>
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20">
+                        <span className="text-[10px] font-mono text-green-400 uppercase tracking-widest">Completed</span>
+                        <span className="text-sm font-mono font-bold text-green-400">{tasks.filter(t => t.completed).length}</span>
+                      </div>
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                        <span className="text-[10px] font-mono opacity-50 uppercase tracking-widest">Pending</span>
+                        <span className="text-sm font-mono font-bold">{tasks.filter(t => !t.completed).length}</span>
+                      </div>
+                      {tasks.some(t => t.status === 'processing') && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20">
+                          <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                          <span className="text-[10px] font-mono text-accent uppercase tracking-widest">Processing</span>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-                
+              </div>
+
+              {/* Task Input & List */}
+              <div className="px-4 md:px-8 lg:px-12 py-6 space-y-6">
+                {/* Add Task Form */}
                 <form 
                   onSubmit={handleAddTask}
-                  className="flex items-center gap-3 bg-[#080808] border border-white/10 rounded-xl p-2 focus-within:border-accent/50 transition-colors"
+                  className="flex items-center gap-3 bg-[#080808] border border-white/10 rounded-xl p-2 focus-within:border-accent/50 transition-colors max-w-3xl"
                 >
                   <input 
                     type="text"
@@ -2808,29 +2844,30 @@ export default function AgenticDevPage() {
                   <button 
                     type="submit"
                     disabled={!newTaskTitle.trim() || !currentProject}
-                    className="p-2 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-2.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                 </form>
 
-                <div className="space-y-2">
+                {/* Task List */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                   {tasks.map(task => (
                     <div 
                       key={task.id}
                       className={cn(
                         "group flex items-center justify-between p-4 rounded-xl border transition-all",
                         task.completed 
-                          ? "bg-white/5 border-white/5 opacity-50" 
-                          : "bg-[#080808] border-white/10 hover:border-white/20",
+                          ? "bg-white/[0.02] border-white/5 opacity-60" 
+                          : "bg-[#080808] border-white/10 hover:border-white/20 hover:bg-white/[0.02]",
                         selectedTaskIds.has(task.id) && "border-accent/50 bg-accent/5"
                       )}
                     >
-                      <div className="flex items-center gap-4 flex-1">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
                         <button 
                           onClick={() => toggleTaskSelection(task.id)}
                           className={cn(
-                            "w-5 h-5 rounded-md border flex items-center justify-center transition-all",
+                            "w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0",
                             selectedTaskIds.has(task.id)
                               ? "bg-accent border-accent text-black" 
                               : "border-white/20 hover:border-accent/50"
@@ -2842,7 +2879,7 @@ export default function AgenticDevPage() {
                         <button 
                           onClick={() => toggleTask(task)}
                           className={cn(
-                            "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                            "w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0",
                             task.completed 
                               ? "bg-green-500 border-green-500 text-white" 
                               : "border-white/20 hover:border-green-500/50"
@@ -2851,9 +2888,9 @@ export default function AgenticDevPage() {
                           {task.completed && <CheckCircle2 className="w-3 h-3" />}
                         </button>
 
-                        <div className="flex flex-col flex-1">
+                        <div className="flex flex-col flex-1 min-w-0">
                           <span className={cn(
-                            "text-sm font-mono",
+                            "text-sm font-mono truncate",
                             task.completed && "line-through opacity-50"
                           )}>
                             {task.title}
@@ -2871,7 +2908,7 @@ export default function AgenticDevPage() {
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 shrink-0">
                         {!task.completed && (
                           <button 
                             onClick={() => runTasks([task])}
@@ -2884,74 +2921,136 @@ export default function AgenticDevPage() {
                         )}
                         <button 
                           onClick={() => deleteTask(task.id)}
-                          className="p-2 rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 md:opacity-100"
+                          className="p-2 rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
                   ))}
-                  {tasks.length === 0 && (
-                    <div className="text-center py-12 border border-white/5 border-dashed rounded-xl">
-                      <CheckCircle2 className="w-8 h-8 mx-auto opacity-20 mb-4" />
-                      <p className="text-xs font-mono opacity-40">No tasks yet. Add one above.</p>
-                    </div>
-                  )}
                 </div>
+
+                {/* Empty State */}
+                {tasks.length === 0 && (
+                  <div className="text-center py-16 border border-white/5 border-dashed rounded-xl max-w-2xl mx-auto">
+                    <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle2 className="w-8 h-8 opacity-20" />
+                    </div>
+                    <p className="text-sm font-mono opacity-40 mb-2">No tasks yet</p>
+                    <p className="text-xs font-mono opacity-20">Add your first task above to get started</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 'agents' && (
-            <div className="flex-1 flex flex-col bg-[#050505] p-4 md:p-8 overflow-y-auto custom-scrollbar">
-              <div className="max-w-4xl mx-auto w-full space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-mono font-bold tracking-tighter">Agent Configuration</h2>
+            <div className="flex-1 flex flex-col bg-[#050505] overflow-y-auto custom-scrollbar">
+              {/* Header Section */}
+              <div className="border-b border-white/5 bg-[#080808]/50 backdrop-blur-sm sticky top-0 z-10">
+                <div className="px-4 md:px-8 lg:px-12 py-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-mono font-bold tracking-tighter">Agent Configuration</h2>
+                      <p className="text-xs font-mono opacity-40 mt-1">Configure your AI agent team for optimal performance</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                        <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                        <span className="text-[10px] font-mono uppercase tracking-widest opacity-70">{AGENTS.length} Agents Active</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              </div>
+
+              {/* Agents Grid */}
+              <div className="px-4 md:px-8 lg:px-12 py-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
                   {AGENTS.map(agent => {
                     const config = currentProject?.agentConfigs?.[agent.id] || { creativity: 1.0, focus: '', tools: [] };
+                    const isActive = projectState.currentAgentIndex === AGENTS.indexOf(agent);
                     return (
-                      <div key={agent.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${agent.color}20`, color: agent.color, border: `1px solid ${agent.color}40` }}>
-                            {agent.icon}
+                      <div 
+                        key={agent.id} 
+                        className={cn(
+                          "group rounded-xl border transition-all duration-200 overflow-hidden",
+                          isActive 
+                            ? "bg-white/[0.06] border-white/20 shadow-lg shadow-white/5" 
+                            : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                        )}
+                      >
+                        {/* Agent Header */}
+                        <div className="p-5 border-b border-white/5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110" 
+                                style={{ backgroundColor: `${agent.color}20`, color: agent.color, border: `1px solid ${agent.color}40` }}
+                              >
+                                {agent.icon}
+                              </div>
+                              <div>
+                                <h3 className="font-mono font-bold text-sm">{agent.name}</h3>
+                                <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{agent.role}</p>
+                              </div>
+                            </div>
+                            {isActive && (
+                              <motion.div 
+                                animate={{ opacity: [0.5, 1, 0.5] }}
+                                transition={{ repeat: Infinity, duration: 1.5 }}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-accent/10 border border-accent/20"
+                              >
+                                <div className="w-1.5 h-1.5 rounded-full bg-accent" />
+                                <span className="text-[9px] font-mono text-accent uppercase tracking-widest">Active</span>
+                              </motion.div>
+                            )}
                           </div>
-                          <div>
-                            <h3 className="font-mono font-bold text-sm">{agent.name}</h3>
-                            <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{agent.role}</p>
-                          </div>
+                          <p className="text-xs font-mono opacity-40 mt-3 leading-relaxed">{agent.description}</p>
                         </div>
-                        
-                        <div className="space-y-3 pt-4 border-t border-white/5">
+
+                        {/* Configuration Section */}
+                        <div className="p-5 space-y-5">
+                          {/* Creativity Slider */}
                           <div>
-                            <label className="flex items-center justify-between text-xs font-mono opacity-70 mb-2">
+                            <label className="flex items-center justify-between text-xs font-mono opacity-70 mb-3">
                               <span>Creativity (Temperature)</span>
-                              <span>{config.creativity.toFixed(1)}</span>
+                              <span className="px-2 py-0.5 rounded bg-white/5 text-accent">{config.creativity.toFixed(1)}</span>
                             </label>
                             <input 
                               type="range" 
                               min="0" max="2" step="0.1" 
                               value={config.creativity}
                               onChange={(e) => updateAgentConfig(agent.id, { creativity: parseFloat(e.target.value) })}
-                              className="w-full accent-accent"
+                              className="w-full accent-accent h-1.5 rounded-full appearance-none bg-white/10 cursor-pointer"
                             />
+                            <div className="flex justify-between mt-1">
+                              <span className="text-[9px] font-mono opacity-30">Precise</span>
+                              <span className="text-[9px] font-mono opacity-30">Creative</span>
+                            </div>
                           </div>
                           
+                          {/* Custom Instructions */}
                           <div>
                             <label className="block text-xs font-mono opacity-70 mb-2">Primary Focus / Custom Instructions</label>
                             <textarea 
                               value={config.focus}
                               onChange={(e) => updateAgentConfig(agent.id, { focus: e.target.value })}
                               placeholder="E.g., Focus on accessibility, use functional components..."
-                              className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-xs font-mono focus:outline-none focus:border-accent/50 transition-colors resize-none h-20"
+                              className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-xs font-mono focus:outline-none focus:border-accent/50 transition-colors resize-none h-24 placeholder:opacity-20"
                             />
                           </div>
 
+                          {/* Tools Section */}
                           <div>
-                            <label className="block text-xs font-mono opacity-70 mb-2">Tools</label>
-                            <div className="space-y-2">
-                              <label className="flex items-center gap-2 text-xs font-mono cursor-pointer">
+                            <label className="block text-xs font-mono opacity-70 mb-3">Tools</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className={cn(
+                                "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                                config.tools.includes('googleSearch') 
+                                  ? "bg-accent/10 border-accent/30 text-accent" 
+                                  : "bg-white/[0.02] border-white/10 hover:border-white/20"
+                              )}>
                                 <input 
                                   type="checkbox" 
                                   checked={config.tools.includes('googleSearch')}
@@ -2963,9 +3062,14 @@ export default function AgenticDevPage() {
                                   }}
                                   className="rounded border-white/20 bg-black/50 text-accent focus:ring-accent focus:ring-offset-0"
                                 />
-                                <span className="opacity-80">Google Search</span>
+                                <span className="text-[10px] font-mono opacity-80">Google Search</span>
                               </label>
-                              <label className="flex items-center gap-2 text-xs font-mono cursor-pointer">
+                              <label className={cn(
+                                "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
+                                config.tools.includes('codeExecution') 
+                                  ? "bg-accent/10 border-accent/30 text-accent" 
+                                  : "bg-white/[0.02] border-white/10 hover:border-white/20"
+                              )}>
                                 <input 
                                   type="checkbox" 
                                   checked={config.tools.includes('codeExecution')}
@@ -2977,21 +3081,23 @@ export default function AgenticDevPage() {
                                   }}
                                   className="rounded border-white/20 bg-black/50 text-accent focus:ring-accent focus:ring-offset-0"
                                 />
-                                <span className="opacity-80">Code Execution</span>
+                                <span className="text-[10px] font-mono opacity-80">Code Exec</span>
                               </label>
                             </div>
                           </div>
 
+                          {/* Skills Section */}
                           <div>
-                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center justify-between mb-3">
                               <label className="block text-xs font-mono opacity-70">Agent Skills</label>
                               <button 
                                 onClick={() => {
                                   setEditingAgentId(agent.id);
                                   setIsSkillLibraryOpen(true);
                                 }}
-                                className="text-[10px] font-mono text-accent hover:underline"
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent/10 text-accent text-[10px] font-mono hover:bg-accent/20 transition-all"
                               >
+                                <Plus className="w-3 h-3" />
                                 ADD SKILL
                               </button>
                             </div>
@@ -3000,16 +3106,16 @@ export default function AgenticDevPage() {
                                 const skill = availableSkills.find(s => s.id === skillId);
                                 if (!skill) return null;
                                 return (
-                                  <div key={skillId} className="flex items-center gap-2 px-2 py-1 rounded bg-accent/10 border border-accent/20 text-[10px] font-mono text-accent">
+                                  <div key={skillId} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/10 border border-accent/20 text-[10px] font-mono text-accent group/skill">
                                     <span>{skill.name}</span>
-                                    <button onClick={() => toggleAgentSkill(agent.id, skillId)} className="hover:text-white">
+                                    <button onClick={() => toggleAgentSkill(agent.id, skillId)} className="opacity-50 hover:opacity-100 hover:text-white transition-all">
                                       <X className="w-3 h-3" />
                                     </button>
                                   </div>
                                 );
                               })}
                               {(config.skills || []).length === 0 && (
-                                <p className="text-[10px] font-mono opacity-30 italic">No specific skills assigned</p>
+                                <p className="text-[10px] font-mono opacity-30 italic py-2">No specific skills assigned</p>
                               )}
                             </div>
                           </div>
