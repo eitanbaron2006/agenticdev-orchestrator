@@ -291,6 +291,14 @@ interface Message {
   isDebuggerProposal?: boolean;
 }
 
+interface OrchestrationGroup {
+  id: string;
+  request: Message | null;
+  responses: Message[];
+  startedAt: any;
+  kind: 'request' | 'system';
+}
+
 interface AgentConfig {
   creativity: number;
   focus: string;
@@ -464,6 +472,57 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
     ]
   }
 ];
+
+const getMessageDate = (timestamp: any) => timestamp?.toDate?.() || new Date(timestamp);
+
+const formatMessageTime = (timestamp: any) =>
+  getMessageDate(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+const getMessagePreview = (content: string) =>
+  content
+    .replace(/\[FILE:\s*(.*?)\]([\s\S]*?)\[\/FILE\]/g, ' [file update] ')
+    .replace(/\[DELETE_FILE:\s*(.*?)\]/g, ' [delete file] ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildOrchestrationGroups = (messages: Message[]): OrchestrationGroup[] => {
+  const groups: OrchestrationGroup[] = [];
+  let currentGroup: OrchestrationGroup | null = null;
+
+  messages.forEach((message) => {
+    if (message.role === 'User') {
+      currentGroup = {
+        id: message.id,
+        request: message,
+        responses: [],
+        startedAt: message.timestamp,
+        kind: 'request',
+      };
+      groups.push(currentGroup);
+      return;
+    }
+
+    if (!currentGroup) {
+      currentGroup = {
+        id: `system-${message.id}`,
+        request: null,
+        responses: [message],
+        startedAt: message.timestamp,
+        kind: 'system',
+      };
+      groups.push(currentGroup);
+      return;
+    }
+
+    currentGroup.responses.push(message);
+  });
+
+  return groups;
+};
 
 // --- Constants ---
 const AGENTS: Agent[] = [
@@ -743,7 +802,7 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
       animate={{ opacity: 1, y: 0 }}
       className={cn(
         "flex flex-col gap-2 p-4 rounded-xl border transition-all",
-        isUser ? "bg-white/5 border-white/10 ml-4 md:ml-12" : "bg-[#111] border-white/5 mr-4 md:mr-12"
+        isUser ? "bg-white/5 border-white/10" : "bg-[#111] border-white/5"
       )}
     >
       <div className="flex items-center justify-between">
@@ -760,7 +819,7 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
           )}
         </div>
         <span className="text-[10px] opacity-30 font-mono">
-          {(message.timestamp?.toDate?.() || new Date(message.timestamp)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          {formatMessageTime(message.timestamp)}
         </span>
       </div>
 
@@ -835,6 +894,113 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
 });
 MessageBubble.displayName = 'MessageBubble';
 
+const OrchestrationAccordion = memo(({
+  group,
+  isExpanded,
+  isRunning,
+  isLatest,
+  activeAgentName,
+  index,
+  onToggle,
+  onAction
+}: {
+  group: OrchestrationGroup;
+  isExpanded: boolean;
+  isRunning: boolean;
+  isLatest: boolean;
+  activeAgentName?: string;
+  index: number;
+  onToggle: () => void;
+  onAction?: (type: string) => void;
+}) => {
+  const previewSource = group.request?.content || group.responses[0]?.content || '';
+  const preview = getMessagePreview(previewSource) || (group.kind === 'request' ? 'No request content.' : 'System activity');
+  const responseCount = group.responses.length;
+  const title = group.kind === 'request' ? `Request ${String(index + 1).padStart(2, '0')}` : 'System Activity';
+
+  return (
+    <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#090909]/90 backdrop-blur-sm">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-white/[0.03] transition-colors text-left"
+      >
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-mono uppercase tracking-[0.24em] text-accent/80">{title}</span>
+            {group.kind === 'request' && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-white/5 text-white/45">
+                {responseCount} {responseCount === 1 ? 'response' : 'responses'}
+              </span>
+            )}
+            {isLatest && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-accent/15 text-accent">
+                Latest
+              </span>
+            )}
+            {isRunning && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-blue-500/15 text-blue-300">
+                Running{activeAgentName ? `: ${activeAgentName}` : ''}
+              </span>
+            )}
+          </div>
+          <p className="text-sm md:text-[15px] font-mono text-white/85 leading-relaxed break-words">
+            {preview}
+          </p>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-3">
+          <span className="hidden sm:block text-[10px] font-mono uppercase tracking-widest text-white/30">
+            {formatMessageTime(group.startedAt)}
+          </span>
+          <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", isExpanded && "rotate-180")} />
+        </div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-white/10 p-4 md:p-5 space-y-5 bg-black/20">
+              {group.request && (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-white/35">Requirement</div>
+                  <MessageBubble message={group.request} onAction={onAction} />
+                </div>
+              )}
+
+              {group.responses.length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-white/35">
+                    {group.kind === 'request' ? 'Execution / Responses' : 'Activity'}
+                  </div>
+                  {group.responses.map((message) => (
+                    <MessageBubble key={message.id} message={message} onAction={onAction} />
+                  ))}
+                </div>
+              )}
+
+              {isRunning && (
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 border-dashed animate-pulse">
+                  <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                  <span className="text-xs font-mono opacity-50">
+                    Agent <span className="text-accent">{activeAgentName || 'Orchestrator'}</span> is processing...
+                  </span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+});
+OrchestrationAccordion.displayName = 'OrchestrationAccordion';
+
 const PromptInput = memo(({ 
   onSubmit, 
   isProcessing, 
@@ -884,7 +1050,7 @@ const PromptInput = memo(({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="w-full">
       {attachments.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((att, idx) => (
@@ -1059,6 +1225,19 @@ export default function AgenticDevPage() {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
   const currentProjectAiModel = currentProject?.aiModel || DEFAULT_AI_MODEL;
+  const groupedMessages = useMemo(() => buildOrchestrationGroups(messages), [messages]);
+  const latestGroupId = groupedMessages[groupedMessages.length - 1]?.id ?? null;
+  const activeAgentName = projectState.currentAgentIndex >= 0 ? AGENTS[projectState.currentAgentIndex]?.name : undefined;
+
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(latestGroupId);
+
+  const handleToggleGroup = useCallback((groupId: string) => {
+    setExpandedGroupId(prev => (prev === groupId ? null : groupId));
+  }, []);
+
+  useEffect(() => {
+    setExpandedGroupId(latestGroupId);
+  }, [latestGroupId]);
 
   const effectiveModelOptions = useMemo(() => {
     const options = [...availableModels];
@@ -2358,7 +2537,7 @@ export default function AgenticDevPage() {
                 onScroll={handleChatScroll}
                 className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth pb-8 custom-scrollbar"
               >
-                {messages.length === 0 ? (
+                {groupedMessages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-8">
                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
                       <Bot className="w-8 h-8 md:w-10 md:h-10 text-accent/50" />
@@ -2375,26 +2554,22 @@ export default function AgenticDevPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="max-w-4xl mx-auto space-y-8">
-                    {messages.map((msg) => (
-                      <MessageBubble 
-                        key={msg.id} 
-                        message={msg} 
+                  <div className="w-full space-y-4 md:space-y-5">
+                    {groupedMessages.map((group, index) => (
+                      <OrchestrationAccordion
+                        key={group.id}
+                        group={group}
+                        index={index}
+                        isExpanded={expandedGroupId === group.id}
+                        isLatest={latestGroupId === group.id}
+                        isRunning={Boolean(isProcessing && latestGroupId === group.id)}
+                        activeAgentName={activeAgentName}
+                        onToggle={() => handleToggleGroup(group.id)}
                         onAction={(type) => {
                           if (type === 'runDebugger') runDebugger();
                         }}
                       />
                     ))}
-                    
-                    {isProcessing && (
-                      <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 border-dashed animate-pulse">
-                        <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                        <span className="text-xs font-mono opacity-50">
-                          Agent <span className="text-accent">{AGENTS[projectState.currentAgentIndex]?.name}</span> is processing...
-                        </span>
-                      </div>
-                    )}
-                    
                   </div>
                 )}
               </div>
