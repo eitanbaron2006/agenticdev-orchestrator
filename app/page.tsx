@@ -915,6 +915,7 @@ const OrchestrationAccordion = memo(({
 }) => {
   const previewSource = group.request?.content || group.responses[0]?.content || '';
   const preview = getMessagePreview(previewSource) || (group.kind === 'request' ? 'No request content.' : 'System activity');
+  const previewHasHebrew = /[\u0590-\u05FF]/.test(preview);
   const responseCount = group.responses.length;
   const title = group.kind === 'request' ? `Request ${String(index + 1).padStart(2, '0')}` : 'System Activity';
 
@@ -943,7 +944,13 @@ const OrchestrationAccordion = memo(({
               </span>
             )}
           </div>
-          <p className="text-sm md:text-[15px] font-mono text-white/85 leading-relaxed break-words">
+          <p
+            className={cn(
+              "text-sm md:text-[15px] font-mono text-white/85 leading-relaxed break-words",
+              previewHasHebrew ? "text-right" : "text-left"
+            )}
+            dir={previewHasHebrew ? "rtl" : "ltr"}
+          >
             {preview}
           </p>
         </div>
