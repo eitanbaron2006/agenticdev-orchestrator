@@ -230,7 +230,7 @@ function HeroVisual() {
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 26, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-[18%] rounded-full border border-white/10"
+          className="absolute left-1/2 top-1/2 h-[310px] w-[310px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10"
         >
           <div className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_20px_rgba(255,255,255,0.9)]" />
           <div className="absolute bottom-0 left-[18%] h-2.5 w-2.5 translate-y-1/2 rounded-full bg-white/70" />
@@ -238,7 +238,7 @@ function HeroVisual() {
         <motion.div
           animate={{ rotate: -360 }}
           transition={{ duration: 36, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-[28%] rounded-full border border-dashed border-accent/20"
+          className="absolute left-1/2 top-1/2 h-[220px] w-[220px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-accent/20"
         >
           <div className="absolute left-1/2 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80" />
           <div className="absolute right-0 top-[28%] h-2 w-2 translate-x-1/2 rounded-full bg-accent/80" />
