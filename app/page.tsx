@@ -1724,6 +1724,9 @@ export default function AgenticDevPage() {
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [skillSearchQuery, setSkillSearchQuery] = useState('');
   const [skillFilter, setSkillFilter] = useState<'all' | 'project'>('all');
+  const [importingSkills, setImportingSkills] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1740,6 +1743,16 @@ export default function AgenticDevPage() {
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const lastNotifiedErrorCount = useRef(0);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const updateScrollButtonVisibility = useCallback(() => {
     const container = scrollRef.current;
@@ -2129,6 +2142,40 @@ ${context}`;
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
+    }
+  };
+
+  const importFromLibrary = async () => {
+    setImportingSkills(true);
+    try {
+      const res = await fetch('/api/import-skills');
+      if (!res.ok) {
+        const err = await res.json();
+        showToast(err.error || 'Failed to import skills from library.', 'error');
+        return;
+      }
+      const { skills, count } = await res.json();
+      if (!skills || skills.length === 0) {
+        showToast('No skills found in the library. Run: npx antigravity-awesome-skills', 'error');
+        return;
+      }
+
+      const existingIds = new Set(availableSkills.map(s => s.id));
+      let imported = 0;
+      for (const skill of skills) {
+        if (existingIds.has(skill.id)) continue;
+        try {
+          await setDoc(doc(db, 'availableSkills', skill.id), skill);
+          imported++;
+        } catch {
+          // skip individual failures
+        }
+      }
+      showToast(`Imported ${imported} new skills from library (${count} total found, ${existingIds.size} already present).`, 'success');
+    } catch (err) {
+      showToast('Failed to connect to import API. Make sure the dev server is running.', 'error');
+    } finally {
+      setImportingSkills(false);
     }
   };
 
@@ -2558,6 +2605,40 @@ ${context}`;
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'availableSkills'));
     return () => unsubscribe();
   }, [user]);
+
+  // Auto-import library skills on first load
+  const libraryImportDone = useRef(false);
+  useEffect(() => {
+    if (!user || libraryImportDone.current || availableSkills.length === 0) return;
+    libraryImportDone.current = true;
+
+    const autoImport = async () => {
+      try {
+        const res = await fetch('/api/import-skills');
+        if (!res.ok) return;
+        const { skills } = await res.json();
+        if (!skills || skills.length === 0) return;
+
+        const existingIds = new Set(availableSkills.map(s => s.id));
+        let imported = 0;
+        for (const skill of skills) {
+          if (existingIds.has(skill.id)) continue;
+          try {
+            await setDoc(doc(db, 'availableSkills', skill.id), skill);
+            imported++;
+          } catch {
+            // skip individual failures
+          }
+        }
+        if (imported > 0) {
+          showToast(`Auto-imported ${imported} skills from library.`, 'success');
+        }
+      } catch {
+        // library not installed or API unavailable - silent
+      }
+    };
+    autoImport();
+  }, [user, availableSkills.length, availableSkills, showToast]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -4476,7 +4557,8 @@ ${context}`;
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0f0f0f] border border-white/10 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              className="bg-[#0f0f0f] border border-white/10 rounded-xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+              style={{ maxWidth: '96rem' }}
             >
               <div className="p-6 border-b border-white/10 flex items-center justify-between">
                 <div>
@@ -4487,6 +4569,18 @@ ${context}`;
                   <p className="text-xs font-mono opacity-50">Download and assign skills to your agents</p>
                 </div>
                 <div className="flex items-center gap-4">
+                  <button
+                    onClick={importFromLibrary}
+                    disabled={importingSkills}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold bg-accent/20 text-accent border border-accent/30 hover:bg-accent/30 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {importingSkills ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Download className="w-3 h-3" />
+                    )}
+                    {importingSkills ? 'IMPORTING...' : 'IMPORT FROM LIBRARY'}
+                  </button>
                   <div className="flex bg-black/50 border border-white/10 rounded-lg p-1">
                     <button 
                       onClick={() => setSkillFilter('all')}
@@ -4523,7 +4617,29 @@ ${context}`;
               </div>
               
               <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Category filter bar */}
+                <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-white/5">
+                  {['all', ...Array.from(new Set(availableSkills.map(s => s.category))).sort()].map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-mono font-bold transition-all whitespace-nowrap",
+                        categoryFilter === cat
+                          ? "bg-accent text-black"
+                          : "bg-white/5 text-white/40 hover:text-white hover:bg-white/10"
+                      )}
+                    >
+                      {cat === 'all' ? 'ALL CATEGORIES' : cat.toUpperCase()}
+                      {cat !== 'all' && (
+                        <span className="ml-1 opacity-60">
+                          ({availableSkills.filter(s => s.category === cat).length})
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                   {availableSkills
                     .filter(s => {
                       const matchesSearch = s.name.toLowerCase().includes(skillSearchQuery.toLowerCase()) || 
@@ -4532,7 +4648,9 @@ ${context}`;
                       
                       const matchesFilter = skillFilter === 'all' || (currentProject?.downloadedSkills || []).includes(s.id);
                       
-                      return matchesSearch && matchesFilter;
+                      const matchesCategory = categoryFilter === 'all' || s.category === categoryFilter;
+                      
+                      return matchesSearch && matchesFilter && matchesCategory;
                     })
                     .map(skill => {
                       const isDownloaded = (currentProject?.downloadedSkills || []).includes(skill.id);
@@ -4614,6 +4732,28 @@ ${context}`;
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={cn(
+              "fixed bottom-6 right-6 z-[100] max-w-md px-5 py-3 rounded-xl border font-mono text-sm shadow-2xl flex items-center gap-3",
+              toast.type === 'success' && "bg-emerald-950/90 border-emerald-500/30 text-emerald-300",
+              toast.type === 'error' && "bg-red-950/90 border-red-500/30 text-red-300",
+              toast.type === 'info' && "bg-blue-950/90 border-blue-500/30 text-blue-300"
+            )}
+          >
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
+            {toast.type === 'error' && <X className="w-5 h-5 flex-shrink-0" />}
+            {toast.type === 'info' && <Zap className="w-5 h-5 flex-shrink-0" />}
+            <span>{toast.message}</span>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
