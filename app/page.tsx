@@ -311,6 +311,7 @@ interface Project {
   ownerId: string;
   name: string;
   description: string;
+  projectType?: string;
   createdAt: any;
   lastModified: any;
   aiModel?: string;
@@ -318,6 +319,74 @@ interface Project {
   globalSkills?: string[];
   downloadedSkills?: string[];
 }
+
+interface ProjectTypeConfig {
+  id: string;
+  name: string;
+  description: string;
+  previewMode: 'iframe' | 'nextjs' | 'server';
+  agentInstruction: string;
+  fileConvention: string;
+}
+
+const PROJECT_TYPES: Record<string, ProjectTypeConfig> = {
+  'static-site': {
+    id: 'static-site',
+    name: 'Static Website',
+    description: 'HTML, CSS, and JavaScript that runs directly in the browser.',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building a STATIC WEBSITE. Generate HTML, CSS, and JS files that run directly in the browser. Do NOT use import/export, Node.js modules, or any build tools. Use <script> tags for JavaScript. Use CDN links for external libraries.',
+    fileConvention: 'index.html at root, with separate .css and .js files'
+  },
+  'react-cdn': {
+    id: 'react-cdn',
+    name: 'React (CDN)',
+    description: 'React application using CDN-loaded React and Babel.',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building a REACT APPLICATION via CDN. Use the global React and ReactDOM objects (e.g., const { useState } = React). Write JSX in <script type="text/babel"> tags. Do NOT use import/export or npm packages. Include all React code inline or in separate .js files loaded via <script> tags.',
+    fileConvention: 'index.html at root with CDN scripts, JSX in <script type="text/babel"> tags'
+  },
+  'nextjs': {
+    id: 'nextjs',
+    name: 'Next.js App',
+    description: 'Full Next.js application with App Router, server components, and API routes.',
+    previewMode: 'nextjs',
+    agentInstruction: 'You are building a NEXT.JS APPLICATION with App Router. Generate a complete Next.js project structure including: package.json, next.config.js/ts, tsconfig.json, app/layout.tsx, app/page.tsx, and any additional pages/components. Use TypeScript. Use Tailwind CSS for styling. You MUST generate a package.json with all required dependencies. You MUST generate a next.config.js/ts. The app/ directory structure must follow Next.js App Router conventions. Generate ALL files needed for a working Next.js application.',
+    fileConvention: 'package.json, next.config.js, app/layout.tsx, app/page.tsx, components/ directory, public/ directory, tsconfig.json'
+  },
+  'vue-cdn': {
+    id: 'vue-cdn',
+    name: 'Vue.js (CDN)',
+    description: 'Vue 3 application using CDN-loaded Vue.',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building a VUE.JS APPLICATION via CDN. Use the global Vue object from the CDN (e.g., const { createApp, ref, reactive } = Vue). Write template syntax directly in HTML. Do NOT use import/export or npm packages. Use Vue 3 Composition API with the global Vue object.',
+    fileConvention: 'index.html at root with Vue CDN, inline templates and scripts'
+  },
+  'svelte-cdn': {
+    id: 'svelte-cdn',
+    name: 'Svelte (CDN)',
+    description: 'Svelte-style reactive app using vanilla JS patterns.',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building a REACTIVE WEB APPLICATION inspired by Svelte patterns. Use vanilla JavaScript with reactive patterns (Proxy-based reactivity, custom reactive stores). Do NOT use import/export or npm packages. All code must run directly in the browser via <script> tags.',
+    fileConvention: 'index.html at root with inline or external .js files'
+  },
+  'express-api': {
+    id: 'express-api',
+    name: 'Express.js API',
+    description: 'Node.js REST API with Express. (Preview shows API docs page)',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building an EXPRESS.JS REST API. Generate a complete Node.js project with package.json, server.js, routes/, middleware/, and models/ directories. Include all route handlers, middleware, and error handling. Since this cannot be previewed in an iframe, also generate an api-docs.html file that documents all API endpoints with example requests/responses. This documentation page will be shown in the preview.',
+    fileConvention: 'package.json, server.js, routes/, middleware/, models/, api-docs.html for preview'
+  },
+  'flask-api': {
+    id: 'flask-api',
+    name: 'Python Flask API',
+    description: 'Python REST API with Flask. (Preview shows API docs page)',
+    previewMode: 'iframe',
+    agentInstruction: 'You are building a PYTHON FLASK REST API. Generate a complete Python project with requirements.txt, app.py, routes/, models/, and config.py. Include all route handlers, error handling, and configuration. Since this cannot be previewed in an iframe, also generate an api-docs.html file that documents all API endpoints with example requests/responses. This documentation page will be shown in the preview.',
+    fileConvention: 'requirements.txt, app.py, routes/, models/, config.py, api-docs.html for preview'
+  }
+};
 
 interface VertexModelOption {
   id: string;
@@ -358,6 +427,7 @@ interface ProjectTemplate {
   name: string;
   description: string;
   icon: React.ReactNode;
+  projectType: string;
   files: { path: string; content: string; language: string }[];
 }
 
@@ -365,8 +435,9 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: 'blank',
     name: 'Blank Project',
-    description: 'Start with a clean slate.',
+    description: 'Start with a clean slate. Choose your project type in settings.',
     icon: <Plus className="w-5 h-5" />,
+    projectType: 'static-site',
     files: []
   },
   {
@@ -374,6 +445,7 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
     name: 'Static Website',
     description: 'Basic HTML, CSS, and JS structure.',
     icon: <Layout className="w-5 h-5" />,
+    projectType: 'static-site',
     files: [
       {
         path: 'index.html',
@@ -424,10 +496,11 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
     ]
   },
   {
-    id: 'react-mini',
-    name: 'React Mini',
-    description: 'A minimal React-like setup using CDN.',
+    id: 'react-cdn',
+    name: 'React (CDN)',
+    description: 'React app using CDN-loaded React and Babel for in-browser JSX.',
     icon: <Code2 className="w-5 h-5" />,
+    projectType: 'react-cdn',
     files: [
       {
         path: 'index.html',
@@ -436,7 +509,7 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>React Mini Template</title>
+    <title>React CDN App</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -450,7 +523,7 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
         return (
           <div className="min-h-screen bg-gray-100 flex items-center justify-center">
             <div className="bg-white p-8 rounded-xl shadow-lg text-center">
-              <h1 className="text-3xl font-bold mb-4 text-blue-600">React Mini</h1>
+              <h1 className="text-3xl font-bold mb-4 text-blue-600">React CDN App</h1>
               <p className="mb-6 text-gray-600">Count: {count}</p>
               <button 
                 onClick={() => setCount(count + 1)}
@@ -467,6 +540,505 @@ const PROJECT_TEMPLATES: ProjectTemplate[] = [
       root.render(<App />);
     </script>
   </body>
+</html>`
+      }
+    ]
+  },
+  {
+    id: 'nextjs',
+    name: 'Next.js App',
+    description: 'Full Next.js project with App Router, TypeScript, and Tailwind CSS.',
+    icon: <Layers className="w-5 h-5" />,
+    projectType: 'nextjs',
+    files: [
+      {
+        path: 'package.json',
+        language: 'json',
+        content: `{
+  "name": "my-nextjs-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.4.0"
+  }
+}`
+      },
+      {
+        path: 'next.config.js',
+        language: 'javascript',
+        content: `/** @type {import('next').NextConfig} */
+const nextConfig = {};
+
+module.exports = nextConfig;`
+      },
+      {
+        path: 'tsconfig.json',
+        language: 'json',
+        content: `{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}`
+      },
+      {
+        path: 'tailwind.config.ts',
+        language: 'typescript',
+        content: `import type { Config } from 'tailwindcss';
+
+const config: Config = {
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+
+export default config;`
+      },
+      {
+        path: 'postcss.config.js',
+        language: 'javascript',
+        content: `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};`
+      },
+      {
+        path: 'app/globals.css',
+        language: 'css',
+        content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}`
+      },
+      {
+        path: 'app/layout.tsx',
+        language: 'typescript',
+        content: `import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: 'My Next.js App',
+  description: 'Created with AgenticDev Orchestrator',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
+    </html>
+  );
+}`
+      },
+      {
+        path: 'app/page.tsx',
+        language: 'typescript',
+        content: `export default function Home() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-24">
+      <h1 className="text-4xl font-bold mb-8">Welcome to Next.js!</h1>
+      <p className="text-lg text-gray-600">
+        Edit <code className="bg-gray-100 px-2 py-1 rounded">app/page.tsx</code> to get started.
+      </p>
+    </main>
+  );
+}`
+      }
+    ]
+  },
+  {
+    id: 'vue-cdn',
+    name: 'Vue.js (CDN)',
+    description: 'Vue 3 app using CDN-loaded Vue with Composition API.',
+    icon: <Code2 className="w-5 h-5" />,
+    projectType: 'vue-cdn',
+    files: [
+      {
+        path: 'index.html',
+        language: 'html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue CDN App</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="app">
+    <div class="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div class="bg-white p-8 rounded-xl shadow-lg text-center">
+        <h1 class="text-3xl font-bold mb-4 text-green-600">{{ title }}</h1>
+        <p class="mb-6 text-gray-600">Count: {{ count }}</p>
+        <button 
+          @click="count++"
+          class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg transition-colors"
+        >
+          Increment
+        </button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const { createApp, ref } = Vue;
+    createApp({
+      setup() {
+        const title = ref('Vue CDN App');
+        const count = ref(0);
+        return { title, count };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>`
+      }
+    ]
+  },
+  {
+    id: 'svelte-cdn',
+    name: 'Svelte-Style App',
+    description: 'Reactive web app using vanilla JS with Svelte-like patterns.',
+    icon: <Sparkles className="w-5 h-5" />,
+    projectType: 'svelte-cdn',
+    files: [
+      {
+        path: 'index.html',
+        language: 'html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reactive App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="reactive.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>`
+      },
+      {
+        path: 'style.css',
+        language: 'css',
+        content: `* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f0f0f0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  text-align: center;
+}
+.card h1 { color: #ff6b35; margin-bottom: 1rem; }
+.card p { color: #666; margin-bottom: 1.5rem; }
+button {
+  background: #ff6b35;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+button:hover { background: #e55a2b; }`
+      },
+      {
+        path: 'reactive.js',
+        language: 'javascript',
+        content: `function reactive(initialValue) {
+  let value = initialValue;
+  const subscribers = new Set();
+  return {
+    get() { return value; },
+    set(newValue) { value = newValue; subscribers.forEach(fn => fn(value)); },
+    subscribe(fn) { subscribers.add(fn); fn(value); return () => subscribers.delete(fn); }
+  };
+}
+
+function mount(component, target) {
+  const el = document.querySelector(target);
+  component(el);
+}`
+      },
+      {
+        path: 'app.js',
+        language: 'javascript',
+        content: `function App(el) {
+  const count = reactive(0);
+  count.subscribe(() => {
+    el.innerHTML = \`
+      <div class="card">
+        <h1>Reactive App</h1>
+        <p>Count: \${count.get()}</p>
+        <button onclick="document.querySelector('#app').__increment()">Increment</button>
+      </div>
+    \`;
+  });
+  el.__increment = () => count.set(count.get() + 1);
+}
+
+mount(App, '#app');`
+      }
+    ]
+  },
+  {
+    id: 'express-api',
+    name: 'Express.js API',
+    description: 'Node.js REST API with Express. Preview shows API documentation.',
+    icon: <Terminal className="w-5 h-5" />,
+    projectType: 'express-api',
+    files: [
+      {
+        path: 'package.json',
+        language: 'json',
+        content: `{
+  "name": "my-express-api",
+  "version": "1.0.0",
+  "description": "Express REST API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}`
+      },
+      {
+        path: 'server.js',
+        language: 'javascript',
+        content: `const express = require('express');
+const cors = require('cors');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.json({ message: 'API is running' });
+});
+
+app.listen(PORT, () => {
+  console.log(\`Server running on port \${PORT}\`);
+});`
+      },
+      {
+        path: 'routes/api.js',
+        language: 'javascript',
+        content: `const express = require('express');
+const router = express.Router();
+
+router.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+module.exports = router;`
+      },
+      {
+        path: 'api-docs.html',
+        language: 'html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Documentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-2">Express API Documentation</h1>
+    <p class="text-gray-400 mb-8">Base URL: http://localhost:3000</p>
+    <div class="space-y-4">
+      <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="bg-green-500 text-xs font-bold px-2 py-1 rounded">GET</span>
+          <code class="text-sm">/</code>
+        </div>
+        <p class="text-gray-400 text-sm">Health check endpoint</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="bg-green-500 text-xs font-bold px-2 py-1 rounded">GET</span>
+          <code class="text-sm">/api/health</code>
+        </div>
+        <p class="text-gray-400 text-sm">API health status</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+      }
+    ]
+  },
+  {
+    id: 'flask-api',
+    name: 'Python Flask API',
+    description: 'Python REST API with Flask. Preview shows API documentation.',
+    icon: <Terminal className="w-5 h-5" />,
+    projectType: 'flask-api',
+    files: [
+      {
+        path: 'requirements.txt',
+        language: 'text',
+        content: `Flask==3.0.0
+flask-cors==4.0.0`
+      },
+      {
+        path: 'app.py',
+        language: 'python',
+        content: `from flask import Flask, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/')
+def index():
+    return jsonify({'message': 'API is running'})
+
+@app.route('/api/health')
+def health():
+    return jsonify({'status': 'ok'})
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)`
+      },
+      {
+        path: 'routes/__init__.py',
+        language: 'python',
+        content: ``
+      },
+      {
+        path: 'routes/api.py',
+        language: 'python',
+        content: `from flask import Blueprint, jsonify
+
+api = Blueprint('api', __name__)
+
+@api.route('/health')
+def health():
+    return jsonify({'status': 'ok'})`
+      },
+      {
+        path: 'api-docs.html',
+        language: 'html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flask API Documentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-2">Flask API Documentation</h1>
+    <p class="text-gray-400 mb-8">Base URL: http://localhost:5000</p>
+    <div class="space-y-4">
+      <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="bg-green-500 text-xs font-bold px-2 py-1 rounded">GET</span>
+          <code class="text-sm">/</code>
+        </div>
+        <p class="text-gray-400 text-sm">Health check endpoint</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="bg-green-500 text-xs font-bold px-2 py-1 rounded">GET</span>
+          <code class="text-sm">/api/health</code>
+        </div>
+        <p class="text-gray-400 text-sm">API health status</p>
+      </div>
+    </div>
+  </div>
+</body>
 </html>`
       }
     ]
@@ -532,7 +1104,7 @@ const AGENTS: Agent[] = [
     name: 'Nexus-7',
     icon: <Cpu className="w-5 h-5" />,
     color: '#3b82f6',
-    description: 'Specializes in system architecture, database design, and scalability.'
+    description: 'Plans system architecture, component hierarchy, data flow, and technology choices. Creates the blueprint for implementation.'
   },
   {
     id: 'developer',
@@ -540,7 +1112,7 @@ const AGENTS: Agent[] = [
     name: 'Cortex-X',
     icon: <Code2 className="w-5 h-5" />,
     color: '#10b981',
-    description: 'Expert in TypeScript, React, and backend logic implementation.'
+    description: 'Implements production-quality code following the architect\'s plan. Writes complete, working files with proper error handling.'
   },
   {
     id: 'designer',
@@ -548,7 +1120,7 @@ const AGENTS: Agent[] = [
     name: 'Aura-V',
     icon: <Layout className="w-5 h-5" />,
     color: '#f59e0b',
-    description: 'Focused on UI/UX, Tailwind CSS, and responsive design patterns.'
+    description: 'Enhances visual design, typography, spacing, responsiveness, and micro-interactions without changing functionality.'
   },
   {
     id: 'qa',
@@ -556,7 +1128,7 @@ const AGENTS: Agent[] = [
     name: 'Sentinel-9',
     icon: <ShieldCheck className="w-5 h-5" />,
     color: '#ef4444',
-    description: 'Rigorous testing, security auditing, and bug detection.'
+    description: 'Reviews code for bugs, verifies requirements are met, checks for security issues, and fixes any problems found.'
   },
   {
     id: 'debugger',
@@ -564,7 +1136,7 @@ const AGENTS: Agent[] = [
     name: 'Fixer-Bot',
     icon: <Zap className="w-5 h-5" />,
     color: '#8b5cf6',
-    description: 'Autonomous debugger that monitors console logs and suggests fixes for errors.'
+    description: 'Monitors console output, analyzes runtime errors with stack traces, identifies root causes, and applies targeted fixes.'
   }
 ];
 
@@ -1341,6 +1913,8 @@ export default function AgenticDevPage() {
     const fileRegex = /\[FILE: (.*?)\]([\s\S]*?)\[\/FILE\]/g;
     const deleteRegex = /\[DELETE_FILE: (.*?)\]/g;
     let match;
+    let filesSaved = 0;
+    let filesDeleted = 0;
 
     while ((match = fileRegex.exec(content)) !== null) {
       const path = match[1].trim();
@@ -1358,6 +1932,20 @@ export default function AgenticDevPage() {
         }
       }
 
+      // Trim leading/trailing whitespace but preserve internal structure
+      fileContent = fileContent.replace(/^\n+/, '').replace(/\n+$/, '\n');
+
+      // Validate file content is not empty or placeholder
+      const trimmedContent = fileContent.trim();
+      if (trimmedContent.length === 0) {
+        console.warn(`Skipping empty file: ${path}`);
+        continue;
+      }
+      if (trimmedContent === '// ... existing code ...' || trimmedContent === '// rest of code' || trimmedContent === '// ... rest of file ...') {
+        console.warn(`Skipping placeholder file: ${path}`);
+        continue;
+      }
+
       const fileId = btoa(path).replace(/=/g, '');
       const language = path.split('.').pop() || 'plaintext';
 
@@ -1370,6 +1958,7 @@ export default function AgenticDevPage() {
           language,
           lastModified: Timestamp.now()
         });
+        filesSaved++;
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
       }
@@ -1380,10 +1969,13 @@ export default function AgenticDevPage() {
       const fileId = btoa(path).replace(/=/g, '');
       try {
         await deleteDoc(doc(db, `projects/${projectId}/files`, fileId));
+        filesDeleted++;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `projects/${projectId}/files/${fileId}`);
       }
     }
+
+    return { filesSaved, filesDeleted };
   };
 
   const triggerDebuggerProposal = useCallback(async () => {
@@ -1410,16 +2002,30 @@ export default function AgenticDevPage() {
   const runDebugger = async () => {
     if (!currentProject || isProcessing) return;
     setIsProcessing(true);
+    setIsDebuggerRunning(true);
     setActiveTab('chat');
 
     const errors = consoleLogs.filter(l => l.type === 'error');
+    const warnings = consoleLogs.filter(l => l.type === 'warn');
     if (errors.length === 0) {
       setIsProcessing(false);
+      setIsDebuggerRunning(false);
       return;
     }
 
-    const errorContext = errors.map(e => `[${e.type}] ${e.message}`).join('\n');
-    const debuggerPrompt = `I've detected the following errors in the console:\n${errorContext}\n\nPlease analyze these errors and fix the project files accordingly.`;
+    const projectType = currentProject.projectType || 'static-site';
+    const projectTypeConfig = PROJECT_TYPES[projectType] || PROJECT_TYPES['static-site'];
+
+    const errorDetails = errors.map((e, i) => {
+      const time = new Date(e.timestamp).toLocaleTimeString();
+      return `[ERROR ${i + 1} @ ${time}]\n${e.message}`;
+    }).join('\n\n');
+    
+    const warningDetails = warnings.length > 0 
+      ? `\n\nWARNINGS (${warnings.length}):\n${warnings.map((w, i) => `[WARN ${i + 1}] ${w.message}`).join('\n')}`
+      : '';
+
+    const debuggerPrompt = `Console Errors Detected:\n${errorDetails}${warningDetails}\n\nAnalyze these errors, identify the root cause in the project files, and fix them.`;
 
     const userMsgId = Date.now().toString();
     const userMsg: Message = {
@@ -1436,16 +2042,17 @@ export default function AgenticDevPage() {
       handleFirestoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
     }
 
-    // Run orchestration with a specific system instruction for the debugger
-    let context = `Previous Conversation (Last 10 messages):\n`;
-    const recentMessages = messages.slice(-10);
+    let context = `PROJECT TYPE: ${projectTypeConfig.name}\n`;
+    context += `PROJECT TYPE RULES: ${projectTypeConfig.agentInstruction}\n\n`;
+    context += `Recent Messages:\n`;
+    const recentMessages = messages.slice(-5);
     recentMessages.forEach(m => {
-      context += `[${m.role}]: ${m.content}\n\n`;
+      context += `[${m.role}]: ${getMessagePreview(m.content)}\n\n`;
     });
-    context += `Debugger Request: ${debuggerPrompt}\n\n`;
+    context += `Debug Request: ${debuggerPrompt}\n\n`;
     
     if (files.length > 0) {
-      context += "Current Project Files Content:\n";
+      context += "Current Project Files:\n";
       files.forEach(f => {
         context += `[FILE: ${f.path}]\n${f.content}\n[/FILE]\n\n`;
       });
@@ -1454,22 +2061,37 @@ export default function AgenticDevPage() {
     const agent = AGENTS.find(a => a.role === 'Debugger') || AGENTS[0];
     setProjectState({ status: 'developing', currentAgentIndex: AGENTS.indexOf(agent) });
 
-    const systemInstruction = `You are the Debugger Agent. Your primary goal is to fix errors reported in the console.
-    Analyze the provided error messages and the current project files. 
-    Generate the necessary file changes to resolve the issues.
-    
-    Use these tags for file operations:
-    1. Create/Update: [FILE: path/to/file.ext] content [/FILE]
-    2. Delete: [DELETE_FILE: path/to/file.ext]
-    
-    CRITICAL INSTRUCTION: When updating a file, you MUST provide the ENTIRE file content inside the [FILE] tags. Do NOT use placeholders like "// ... existing code ...". If you do not provide the full content, the file will be corrupted.
-    
-    CRITICAL INSTRUCTION: You are building a simple web application that runs directly in the browser via a simple HTML viewer. Do NOT use \`import\` or \`export\` statements. Do NOT use Node.js modules or bundlers. If using React, use the global \`React\` and \`ReactDOM\` objects (e.g., \`const { useState } = React\`). Write all your JavaScript in a way that can be executed directly in a standard \`<script>\` tag or \`<script type="text/babel">\` tag.
-    
-    CRITICAL INSTRUCTION: At the end of your response, you MUST provide a summary of the files you modified, created, or deleted, and briefly describe the changes made to each file.
-    
-    Current Context:
-    ${context}`;
+    const systemInstruction = `You are FIXER-BOT, the Debugger Agent. You are an expert at diagnosing and fixing JavaScript/runtime errors.
+
+DEBUGGING PROCESS:
+1. ANALYZE each error message carefully - identify the file, line number, and error type
+2. TRACE the error to its root cause in the source code
+3. FIX the specific file(s) causing the error
+4. VERIFY your fix doesn't introduce new issues
+
+COMMON ERROR PATTERNS TO CHECK:
+- ReferenceError: variable/function not defined → check scope, typos, missing declarations
+- TypeError: cannot read property of undefined → add null checks, verify data flow
+- SyntaxError: unexpected token → check brackets, quotes, semicolons
+- Network errors: failed to fetch → check URLs, CORS, network connectivity
+- React errors: hooks rules, missing keys, invalid children → check component structure
+
+FILE OPERATIONS:
+- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
+- Delete: [DELETE_FILE: path/to/file.ext]
+
+CRITICAL RULES:
+1. ALWAYS provide COMPLETE file content - never use placeholders like "// ... existing code"
+2. ONLY fix the files that are causing errors - do not modify unrelated files
+3. Do NOT change the project type or technology stack
+4. After your analysis, explain what the error was, what caused it, and how you fixed it
+5. List every file you modified with a brief description of the change
+
+PROJECT TYPE: ${projectTypeConfig.name}
+${projectTypeConfig.agentInstruction}
+
+Current Context:
+${context}`;
 
     try {
       const content = await generateAiText({
@@ -1493,6 +2115,7 @@ export default function AgenticDevPage() {
     }
 
     setIsProcessing(false);
+    setIsDebuggerRunning(false);
     setProjectState({ status: 'completed', currentAgentIndex: -1 });
   };
 
@@ -1579,10 +2202,16 @@ export default function AgenticDevPage() {
       'QA': 'reviewing'
     };
     
-    let context = `Previous Conversation (Last 10 messages):\n`;
+    const projectType = currentProject.projectType || 'static-site';
+    const projectTypeConfig = PROJECT_TYPES[projectType] || PROJECT_TYPES['static-site'];
+    
+    let context = `PROJECT TYPE: ${projectTypeConfig.name} (ID: ${projectType})\n`;
+    context += `PROJECT TYPE RULES: ${projectTypeConfig.agentInstruction}\n`;
+    context += `FILE CONVENTION: ${projectTypeConfig.fileConvention}\n\n`;
+    context += `Previous Conversation (Last 10 messages):\n`;
     const recentMessages = messages.slice(-10);
     recentMessages.forEach(m => {
-      context += `[${m.role}]: ${m.content}\n\n`;
+      context += `[${m.role}]: ${getMessagePreview(m.content)}\n\n`;
     });
     context += `New User Request: ${userPrompt}\n\n`;
     
@@ -1593,42 +2222,131 @@ export default function AgenticDevPage() {
       });
     }
 
+    let errorContext = '';
+
     for (let i = 0; i < orchestrationAgents.length; i++) {
       const agent = orchestrationAgents[i];
       setProjectState({ status: agentStatuses[agent.role] || 'analyzing', currentAgentIndex: AGENTS.indexOf(agent) });
 
       const agentSkills = [
         ...(currentProject.globalSkills || []),
-        ...(currentProject.agentConfigs?.[agent.role]?.skills || [])
+        ...(currentProject.agentConfigs?.[agent.id]?.skills || [])
       ].map(id => availableSkills.find(s => s.id === id)).filter(Boolean) as Skill[];
 
-      const skillsContext = agentSkills.map(s => `[SKILL: ${s.name}]\n${s.content}`).join('\n\n');
+      const skillsContext = agentSkills.length > 0 
+        ? `\nAssigned Skills:\n${agentSkills.map(s => `- ${s.name}: ${s.content}`).join('\n')}`
+        : '';
 
-      const systemInstruction = `You are the ${agent.role} Agent. ${agent.description}
-      
-      Available Skills for this task:
-      ${skillsContext}
-      
-      Use these tags for file operations:
-      1. Create/Update: [FILE: path/to/file.ext] content [/FILE]
-      2. Delete: [DELETE_FILE: path/to/file.ext]
-      
-      CRITICAL INSTRUCTION: When updating a file, you MUST provide the ENTIRE file content inside the [FILE] tags. Do NOT use placeholders like "// ... existing code ...". If you do not provide the full content, the file will be corrupted.
-      
-      CRITICAL INSTRUCTION: You are building a simple web application that runs directly in the browser via a simple HTML viewer. Do NOT use \`import\` or \`export\` statements. Do NOT use Node.js modules or bundlers. If using React, use the global \`React\` and \`ReactDOM\` objects (e.g., \`const { useState } = React\`). Write all your JavaScript in a way that can be executed directly in a standard \`<script>\` tag or \`<script type="text/babel">\` tag.
-      
-      CRITICAL INSTRUCTION: At the end of your response, you MUST provide a summary of the files you modified, created, or deleted, and briefly describe the changes made to each file.
-      
-      Current Context:
-      ${context}`;
+      const agentRoleInstructions: Record<string, string> = {
+        'Architect': `You are the ARCHITECT Agent (Nexus-7). Your role is to plan and design the system architecture.
+
+RESPONSIBILITIES:
+- Analyze the user's request and break it down into clear architectural decisions
+- Define the file structure, component hierarchy, and data flow
+- Specify which technologies, libraries, and patterns to use
+- Create a clear plan that the Developer agent can follow
+- Consider edge cases, error handling, and scalability
+
+OUTPUT FORMAT:
+- Provide a clear architectural plan as text
+- If you create or update files, use [FILE: path] tags with COMPLETE file content
+- Focus on planning; leave implementation details to the Developer agent
+- Be specific about component names, file paths, and data structures`,
+
+        'Developer': `You are the DEVELOPER Agent (Cortex-X). Your role is to implement the code based on the Architect's plan.
+
+RESPONSIBILITIES:
+- Write clean, correct, production-quality code
+- Follow the Architect's plan precisely
+- Implement all functionality described in the user's request
+- Ensure all files are complete and work together
+- Handle errors and edge cases in code
+
+STRICT RULES:
+- ONLY implement what was requested - do not add features the user did not ask for
+- Do NOT change the project type or technology stack unless explicitly requested
+- Every file you output must be COMPLETE - no placeholders, no "// ... rest of code", no truncation
+- Ensure all cross-file references (imports, links, paths) are correct
+- Verify your code mentally before outputting it`,
+
+        'Designer': `You are the DESIGNER Agent (Aura-V). Your role is to enhance the visual design and user experience.
+
+RESPONSIBILITIES:
+- Improve the visual styling, layout, and typography
+- Ensure responsive design across screen sizes
+- Add smooth transitions and micro-interactions
+- Ensure color contrast and visual hierarchy
+
+STRICT RULES:
+- ONLY modify styling and visual elements - do NOT change functionality
+- Do NOT remove or break existing features
+- Preserve all JavaScript logic and component structure
+- Only output files you are changing - do not re-output unchanged files
+- Use the project's existing CSS framework (Tailwind, vanilla CSS, etc.)`,
+
+        'QA': `You are the QA Agent (Sentinel-9). Your role is to review the implementation for quality and correctness.
+
+RESPONSIBILITIES:
+- Review all generated code for bugs, errors, and security issues
+- Verify that the implementation matches the user's request exactly
+- Check for broken links, missing imports, and type errors
+- Validate that the preview will work correctly
+- Fix any issues you find
+
+STRICT RULES:
+- If you find issues, fix them by outputting corrected [FILE: path] tags
+- If no issues are found, confirm that the implementation is correct
+- Do NOT add new features or change existing functionality
+- Only fix bugs - do not refactor or "improve" working code
+- Be specific about what you checked and what you fixed`
+      };
+
+      const roleInstruction = agentRoleInstructions[agent.role] || agent.description;
+
+      const systemInstruction = `${roleInstruction}
+${skillsContext}
+
+PROJECT TYPE: ${projectTypeConfig.name}
+${projectTypeConfig.agentInstruction}
+
+FILE OPERATIONS:
+- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
+- Delete: [DELETE_FILE: path/to/file.ext]
+
+CRITICAL RULES:
+1. NEVER use placeholders like "// ... existing code ..." or "// rest of file" - always provide COMPLETE file content
+2. NEVER change the project type (e.g., from Next.js to static HTML) unless the user explicitly asks
+3. NEVER add features the user did not request
+4. ALWAYS ensure files reference each other correctly (CSS links, script src, imports)
+5. At the end of your response, provide a brief summary of what you did
+${errorContext ? `\nERRORS FROM PREVIOUS AGENT:\n${errorContext}\nFix these issues in your response.\n` : ''}
+Current Context:
+${context}`;
 
       try {
         const content = await generateAiText({
           prompt: userPrompt,
           systemInstruction,
-          attachments,
+          attachments: i === 0 ? attachments : [],
           model: currentProject.aiModel,
         });
+        
+        // Validate that the agent didn't try to change project type
+        const lowerContent = content.toLowerCase();
+        const typeChangeWarnings: string[] = [];
+        if (projectType === 'nextjs' && (lowerContent.includes('static html') || lowerContent.includes('standalone html file') || lowerContent.includes('single html'))) {
+          typeChangeWarnings.push('Warning: Response appears to suggest converting to static HTML. This is a Next.js project - maintain Next.js structure.');
+        }
+        if (projectType === 'static-site' && (lowerContent.includes('package.json') || lowerContent.includes('next.config') || lowerContent.includes('npm install'))) {
+          typeChangeWarnings.push('Warning: Response appears to add Node.js/bundler files. This is a static site project - use only HTML/CSS/JS.');
+        }
+        
+        if (typeChangeWarnings.length > 0) {
+          errorContext = typeChangeWarnings.join('\n');
+        } else {
+          errorContext = '';
+        }
+        
         await parseAndSaveFiles(content, currentProject.id);
 
         const agentMsgId = Date.now().toString() + agent.role;
@@ -1641,9 +2359,11 @@ export default function AgenticDevPage() {
         };
         await setDoc(doc(db, `projects/${currentProject.id}/messages`, agentMsgId), agentMsg);
         
-        context += `[${agent.role}]: ${content}\n\n`;
+        context += `[${agent.role}]: ${getMessagePreview(content)}\n\n`;
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`Error with ${agent.role}:`, error);
+        errorContext = `Agent ${agent.role} encountered an error: ${errorMsg}`;
       }
     }
 
@@ -1960,6 +2680,7 @@ export default function AgenticDevPage() {
       ownerId: user.uid,
       name,
       description: template.description,
+      projectType: template.projectType,
       aiModel: DEFAULT_AI_MODEL,
       createdAt: Timestamp.now(),
       lastModified: Timestamp.now()
@@ -2276,42 +2997,15 @@ export default function AgenticDevPage() {
 
 
   const getPreviewHtml = () => {
-    // Prioritize index.html, then any .html file
-    // Sort by lastModified descending to get the latest version if duplicates exist
+    const projectType = currentProject?.projectType || 'static-site';
+    const projectTypeConfig = PROJECT_TYPES[projectType] || PROJECT_TYPES['static-site'];
+    
     const sortedFiles = [...files].sort((a, b) => {
       const timeA = a.lastModified?.toMillis?.() || 0;
       const timeB = b.lastModified?.toMillis?.() || 0;
       return timeB - timeA;
     });
 
-    let htmlFile = sortedFiles.find(f => f.path === 'index.html' || f.path === '/index.html');
-    if (!htmlFile) {
-      htmlFile = sortedFiles.find(f => f.path.endsWith('.html'));
-    }
-
-    if (!htmlFile) {
-      return '<html><body style="font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; color:#999;">No HTML file found for preview. Please ask the agents to generate an index.html file.</body></html>';
-    }
-    
-    let html = htmlFile.content;
-    
-    // Inject CSS
-    const cssFiles = files.filter(f => f.path.endsWith('.css'));
-    let cssInject = '';
-    cssFiles.forEach(f => {
-      cssInject += `<style>\n${f.content}\n</style>\n`;
-    });
-    
-    // Inject JS
-    const jsFiles = files.filter(f => f.path.endsWith('.js') || f.path.endsWith('.jsx'));
-    let jsInject = '';
-    const hasBabel = html.includes('babel.min.js');
-    jsFiles.forEach(f => {
-      const scriptType = hasBabel ? 'text/babel' : 'text/javascript';
-      jsInject += `<script type="${scriptType}">\n${f.content}\n</script>\n`;
-    });
-
-    // Inject Console Capture
     const consoleCaptureScript = `
       <script>
         (function() {
@@ -2319,23 +3013,17 @@ export default function AgenticDevPage() {
           const originalError = console.error;
           const originalWarn = console.warn;
           const originalInfo = console.info;
-
           const sendToParent = (type, args) => {
             const message = args.map(arg => {
-              try {
-                return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
-              } catch (e) {
-                return String(arg);
-              }
+              try { return typeof arg === 'object' ? JSON.stringify(arg) : String(arg); }
+              catch (e) { return String(arg); }
             }).join(' ');
             window.parent.postMessage({ type: 'CONSOLE_LOG', payload: { type, message } }, '*');
           };
-
           console.log = (...args) => { originalLog(...args); sendToParent('log', args); };
           console.error = (...args) => { originalError(...args); sendToParent('error', args); };
           console.warn = (...args) => { originalWarn(...args); sendToParent('warn', args); };
           console.info = (...args) => { originalInfo(...args); sendToParent('info', args); };
-
           window.onerror = (message, source, lineno, colno, error) => {
             sendToParent('error', [\`Uncaught Error: \${message} at \${source}:\${lineno}:\${colno}\`]);
           };
@@ -2346,10 +3034,62 @@ export default function AgenticDevPage() {
       </script>
     `;
 
-    // Inject Tailwind CDN for convenience
-    const tailwindInject = '<script src="https://cdn.tailwindcss.com"></script>';
+    // For Next.js projects, generate a comprehensive preview page
+    if (projectType === 'nextjs') {
+      return generateNextJsPreview(sortedFiles, consoleCaptureScript);
+    }
+
+    // For API projects (Express, Flask), show the api-docs.html if available
+    if (projectTypeConfig.previewMode === 'server') {
+      let docsFile = sortedFiles.find(f => f.path === 'api-docs.html' || f.path.endsWith('/api-docs.html'));
+      if (docsFile) {
+        let html = docsFile.content;
+        const headInject = `<script src="https://cdn.tailwindcss.com"></script>\n${consoleCaptureScript}`;
+        if (html.includes('</head>')) {
+          html = html.replace('</head>', `${headInject}</head>`);
+        } else {
+          html = `<head>${headInject}</head>${html}`;
+        }
+        return html;
+      }
+      return generateApiDocsPreview(sortedFiles, projectTypeConfig, consoleCaptureScript);
+    }
+
+    // Standard iframe preview for static sites, React CDN, Vue, etc.
+    let htmlFile = sortedFiles.find(f => f.path === 'index.html' || f.path === '/index.html');
+    if (!htmlFile) {
+      htmlFile = sortedFiles.find(f => f.path.endsWith('.html'));
+    }
+
+    if (!htmlFile) {
+      return `<html><head>${consoleCaptureScript}</head><body style="font-family:system-ui,sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; color:#999; background:#111;">
+        <div style="text-align:center;">
+          <h2 style="color:#f59e0b; margin-bottom:8px;">No HTML file found</h2>
+          <p>Project type: ${projectTypeConfig.name}</p>
+          <p style="margin-top:8px;">Ask the agents to generate the required files.</p>
+        </div>
+      </body></html>`;
+    }
     
-    // Combine injections
+    let html = htmlFile.content;
+    
+    // Inject CSS
+    const cssFiles = files.filter(f => f.path.endsWith('.css') && f.path !== htmlFile!.path);
+    let cssInject = '';
+    cssFiles.forEach(f => {
+      cssInject += `<style>\n${f.content}\n</style>\n`;
+    });
+    
+    // Inject JS
+    const jsFiles = files.filter(f => (f.path.endsWith('.js') || f.path.endsWith('.jsx')) && f.path !== htmlFile!.path);
+    let jsInject = '';
+    const hasBabel = html.includes('babel.min.js');
+    jsFiles.forEach(f => {
+      const scriptType = hasBabel ? 'text/babel' : 'text/javascript';
+      jsInject += `<script type="${scriptType}">\n${f.content}\n</script>\n`;
+    });
+
+    const tailwindInject = '<script src="https://cdn.tailwindcss.com"></script>';
     const headInject = `${tailwindInject}\n${consoleCaptureScript}\n${cssInject}`;
     
     if (html.includes('</head>')) {
@@ -2367,6 +3107,189 @@ export default function AgenticDevPage() {
     }
     
     return html;
+  };
+
+  const generateNextJsPreview = (sortedFiles: ProjectFile[], consoleCaptureScript: string) => {
+    const pageFile = sortedFiles.find(f => f.path === 'app/page.tsx' || f.path === 'src/app/page.tsx');
+    const layoutFile = sortedFiles.find(f => f.path === 'app/layout.tsx' || f.path === 'src/app/layout.tsx');
+    const packageJson = sortedFiles.find(f => f.path === 'package.json');
+    const cssFile = sortedFiles.find(f => f.path === 'app/globals.css' || f.path === 'src/app/globals.css');
+    
+    let deps: string[] = [];
+    if (packageJson) {
+      try {
+        const pkg = JSON.parse(packageJson.content);
+        deps = [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})];
+      } catch {}
+    }
+
+    const componentFiles = sortedFiles.filter(f => 
+      f.path.startsWith('components/') || f.path.startsWith('src/components/')
+    );
+    const allPages = sortedFiles.filter(f => 
+      (f.path.startsWith('app/') || f.path.startsWith('src/app/')) && 
+      (f.path.endsWith('.tsx') || f.path.endsWith('.ts') || f.path.endsWith('.jsx'))
+    );
+
+    const fileTreeHtml = sortedFiles.map(f => {
+      const ext = f.path.split('.').pop()?.toLowerCase() || '';
+      const color = ['ts','tsx','js','jsx'].includes(ext) ? '#facc15' : 
+                    ext === 'css' ? '#60a5fa' : 
+                    ext === 'json' ? '#4ade80' : '#999';
+      return `<div style="padding:2px 0; padding-left:${(f.path.split('/').length - 1) * 16 + 8}px;">
+        <span style="color:${color};">●</span> ${f.path}
+      </div>`;
+    }).join('');
+
+    const escapeHtml = (str: string) => str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const pageContent = pageFile ? escapeHtml(pageFile.content) : '// No page.tsx found';
+    const cssContent = cssFile ? escapeHtml(cssFile.content) : '';
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Next.js Project Preview</title>
+  ${consoleCaptureScript}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0a; color: #e5e5e5; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #000 0%, #111 100%); border-bottom: 1px solid #222; padding: 16px 24px; }
+    .header h1 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header h1 span { color: #fff; }
+    .badge { background: #222; color: #aaa; font-size: 10px; padding: 2px 8px; border-radius: 999px; font-family: monospace; }
+    .content { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 60px); }
+    .sidebar { background: #111; border-right: 1px solid #222; padding: 16px; overflow-y: auto; }
+    .sidebar h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #666; margin-bottom: 8px; }
+    .file-tree { font-family: monospace; font-size: 12px; color: #aaa; }
+    .main { padding: 24px; overflow-y: auto; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .info-card { background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px; }
+    .info-card h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #666; margin-bottom: 4px; }
+    .info-card .value { font-size: 24px; font-weight: 700; color: #fff; }
+    .section { margin-bottom: 24px; }
+    .section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #fff; }
+    .code-block { background: #111; border: 1px solid #222; border-radius: 8px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; overflow-x: auto; white-space: pre-wrap; color: #e5e5e5; max-height: 400px; overflow-y: auto; }
+    .note { background: #1a1a00; border: 1px solid #333300; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #facc15; margin-bottom: 16px; }
+    .tabs { display: flex; gap: 2px; margin-bottom: 16px; background: #111; border-radius: 8px; padding: 4px; border: 1px solid #222; }
+    .tab { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-family: monospace; cursor: pointer; color: #888; transition: all 0.2s; }
+    .tab.active { background: #222; color: #fff; }
+    .tab:hover:not(.active) { color: #ccc; }
+    .dep-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .dep { background: #1a1a2e; border: 1px solid #2a2a4e; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-family: monospace; color: #818cf8; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>
+      <svg width="20" height="20" viewBox="0 0 180 180" fill="none"><mask id="a" maskUnits="userSpaceOnUse" x="0" y="0" width="180" height="180" style="mask-type:alpha"><circle cx="90" cy="90" r="90" fill="#000"/></mask><g mask="url(#a)"><circle cx="90" cy="90" r="89.5" fill="#000" stroke="#fff"/><path d="M149.508 157.52L69.142 54H54v71.97h12.114V69.384l73.885 95.461a90.04 90.04 0 009.509-7.325z" fill="url(#b)"/><rect x="115" y="54" width="12" height="72" fill="url(#c)"/></g><defs><linearGradient id="b" x1="109" y1="116.5" x2="144.5" y2="160.5" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="c" x1="121" y1="54" x2="120.99" y2="126" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs></svg>
+      <span>Next.js Project Preview</span>
+      <span class="badge">App Router</span>
+    </h1>
+  </div>
+  <div class="content">
+    <div class="sidebar">
+      <h3>Project Structure</h3>
+      <div class="file-tree">${fileTreeHtml}</div>
+    </div>
+    <div class="main">
+      <div class="note">
+        This is a Next.js server-rendered application. The preview shows project structure and source code. To see the live app, run <code>npm install && npm run dev</code> in your terminal.
+      </div>
+      <div class="info-grid">
+        <div class="info-card">
+          <h4>Files</h4>
+          <div class="value">${sortedFiles.length}</div>
+        </div>
+        <div class="info-card">
+          <h4>Pages</h4>
+          <div class="value">${allPages.length}</div>
+        </div>
+        <div class="info-card">
+          <h4>Components</h4>
+          <div class="value">${componentFiles.length}</div>
+        </div>
+        <div class="info-card">
+          <h4>Dependencies</h4>
+          <div class="value">${deps.length}</div>
+        </div>
+      </div>
+      ${deps.length > 0 ? `
+      <div class="section">
+        <h3>Dependencies</h3>
+        <div class="dep-list">${deps.map(d => `<span class="dep">${d}</span>`).join('')}</div>
+      </div>` : ''}
+      <div class="section">
+        <h3>Source Code</h3>
+        <div class="tabs">
+          ${pageFile ? `<div class="tab active" onclick="showCode('page')">page.tsx</div>` : ''}
+          ${layoutFile ? `<div class="tab" onclick="showCode('layout')">layout.tsx</div>` : ''}
+          ${cssFile ? `<div class="tab" onclick="showCode('css')">globals.css</div>` : ''}
+          ${componentFiles.map((f, i) => `<div class="tab" onclick="showCode('comp${i}')">${f.path.split('/').pop()}</div>`).join('')}
+        </div>
+        ${pageFile ? `<div id="code-page" class="code-block">${pageContent}</div>` : ''}
+        ${layoutFile ? `<div id="code-layout" class="code-block" style="display:none">${escapeHtml(layoutFile.content)}</div>` : ''}
+        ${cssFile ? `<div id="code-css" class="code-block" style="display:none">${cssContent}</div>` : ''}
+        ${componentFiles.map((f, i) => `<div id="code-comp${i}" class="code-block" style="display:none">${escapeHtml(f.content)}</div>`).join('')}
+      </div>
+    </div>
+  </div>
+  <script>
+    function showCode(id) {
+      document.querySelectorAll('.code-block').forEach(b => b.style.display = 'none');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      const el = document.getElementById('code-' + id);
+      if (el) el.style.display = 'block';
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>`;
+  };
+
+  const generateApiDocsPreview = (sortedFiles: ProjectFile[], config: ProjectTypeConfig, consoleCaptureScript: string) => {
+    const escapeHtml = (str: string) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    const fileTreeHtml = sortedFiles.map(f => {
+      const ext = f.path.split('.').pop()?.toLowerCase() || '';
+      const color = ['ts','js','py'].includes(ext) ? '#facc15' : 
+                    ext === 'json' ? '#4ade80' : 
+                    ext === 'html' ? '#f97316' : '#999';
+      return `<div style="padding:2px 0; padding-left:${(f.path.split('/').length - 1) * 16 + 8}px;">
+        <span style="color:${color};">●</span> ${f.path}
+      </div>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${config.name} Preview</title>
+  ${consoleCaptureScript}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #e5e5e5; min-height: 100vh; padding: 24px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 24px; }
+    .note { background: #1a1a2e; border: 1px solid #2a2a4e; border-radius: 8px; padding: 16px; margin-bottom: 24px; color: #818cf8; }
+    .file-tree { font-family: monospace; font-size: 12px; color: #aaa; background: #111; border: 1px solid #222; border-radius: 8px; padding: 16px; }
+  </style>
+</head>
+<body>
+  <h1>${config.name}</h1>
+  <p class="subtitle">${config.description}</p>
+  <div class="note">
+    This is a server-side application. To run it locally, use the appropriate command (<code>node server.js</code> for Express or <code>python app.py</code> for Flask). This preview shows the project file structure.
+  </div>
+  <div class="file-tree">${fileTreeHtml}</div>
+</body>
+</html>`;
   };
 
   if (!isAuthReady) {
@@ -2457,6 +3380,11 @@ export default function AgenticDevPage() {
               <span className="text-[10px] md:text-xs font-mono uppercase tracking-widest opacity-70 truncate max-w-[120px] md:max-w-none">
                 {currentProject ? currentProject.name : 'No Project Selected'}
               </span>
+              {currentProject && currentProject.projectType && (
+                <span className="hidden md:inline-flex text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/5">
+                  {PROJECT_TYPES[currentProject.projectType]?.name || currentProject.projectType}
+                </span>
+              )}
               {currentProject && (
                 <>
                   <button
@@ -2671,6 +3599,9 @@ export default function AgenticDevPage() {
                   <div className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-200 rounded text-[9px] font-mono text-gray-600">
                     <FileCode className="w-3 h-3 opacity-50" />
                     {(() => {
+                      const pt = currentProject?.projectType || 'static-site';
+                      const ptConfig = PROJECT_TYPES[pt];
+                      if (ptConfig) return ptConfig.name;
                       const sortedFiles = [...files].sort((a, b) => {
                         const timeA = a.lastModified?.toMillis?.() || 0;
                         const timeB = b.lastModified?.toMillis?.() || 0;
@@ -2678,7 +3609,7 @@ export default function AgenticDevPage() {
                       });
                       let htmlFile = sortedFiles.find(f => f.path === 'index.html' || f.path === '/index.html');
                       if (!htmlFile) htmlFile = sortedFiles.find(f => f.path.endsWith('.html'));
-                      return htmlFile ? htmlFile.path : 'No HTML found';
+                      return htmlFile ? htmlFile.path : 'No preview available';
                     })()}
                   </div>
                 </div>
@@ -3389,6 +4320,16 @@ export default function AgenticDevPage() {
                         rows={3}
                         className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:border-accent/50 transition-colors resize-none"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase tracking-widest opacity-50 mb-2">Project Type</label>
+                      <div className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/5 rounded-lg">
+                        <span className="text-sm font-mono text-white/70">
+                          {PROJECT_TYPES[currentProject.projectType || 'static-site']?.name || 'Static Website'}
+                        </span>
+                        <span className="text-[9px] font-mono text-white/30 bg-white/5 px-2 py-0.5 rounded">LOCKED</span>
+                      </div>
+                      <p className="text-[9px] font-mono text-white/30 mt-1">Project type is set at creation to prevent agents from changing it.</p>
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-2">

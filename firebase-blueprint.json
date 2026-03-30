@@ -22,6 +22,7 @@
         "ownerId": { "type": "string" },
         "name": { "type": "string" },
         "description": { "type": "string" },
+        "projectType": { "type": "string", "description": "Project type ID (static-site, react-cdn, nextjs, vue-cdn, svelte-cdn, express-api, flask-api)" },
         "createdAt": { "type": "string", "format": "date-time" },
         "lastModified": { "type": "string", "format": "date-time" },
         "globalSkills": { 
