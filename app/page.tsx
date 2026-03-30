@@ -6,14 +6,14 @@ import React, { useState, useRef, useEffect, useMemo, memo, useCallback } from '
 import Image from 'next/image';
 import JSZip from 'jszip';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Terminal, 
-  Cpu, 
-  Code2, 
-  Layout, 
-  ShieldCheck, 
-  Send, 
-  Loader2, 
+import {
+  Terminal as TerminalIcon,
+  Cpu,
+  Code2,
+  Layout,
+  ShieldCheck,
+  Send,
+  Loader2,
   Play,
   History,
   Settings,
@@ -64,6 +64,8 @@ import {
 } from 'firebase/auth';
 import LandingPage from '@/components/LandingPage';
 import AuthScreen from '@/components/AuthScreen';
+import Terminal from '@/components/Terminal';
+import { useSandbox, type SandboxFile } from '@/hooks/useSandbox';
 import { 
   collection, 
   doc, 
@@ -865,7 +867,7 @@ mount(App, '#app');`
     id: 'express-api',
     name: 'Express.js API',
     description: 'Node.js REST API with Express. Preview shows API documentation.',
-    icon: <Terminal className="w-5 h-5" />,
+    icon: <TerminalIcon className="w-5 h-5" />,
     projectType: 'express-api',
     files: [
       {
@@ -961,7 +963,7 @@ module.exports = router;`
     id: 'flask-api',
     name: 'Python Flask API',
     description: 'Python REST API with Flask. Preview shows API documentation.',
-    icon: <Terminal className="w-5 h-5" />,
+    icon: <TerminalIcon className="w-5 h-5" />,
     projectType: 'flask-api',
     files: [
       {
@@ -1743,6 +1745,11 @@ export default function AgenticDevPage() {
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const lastNotifiedErrorCount = useRef(0);
+
+  // Daytona Sandbox State
+  const sandbox = useSandbox();
+  const [isSandboxPreview, setIsSandboxPreview] = useState(false);
+  const [sandboxServerStarted, setSandboxServerStarted] = useState(false);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -3498,7 +3505,7 @@ ${context}`;
                 activeTab === 'chat' ? "bg-accent text-black" : "opacity-50 hover:opacity-100"
               )}
             >
-              <Terminal className="w-3 h-3" />
+              <TerminalIcon className="w-3 h-3" />
               <span className="hidden sm:inline">ORCHESTRATOR</span>
             </button>
             <button 
@@ -3673,48 +3680,127 @@ ${context}`;
           )}
 
           {activeTab === 'preview' && (
-            <div className="flex-1 flex flex-col bg-white">
-              <div className="h-10 border-b border-gray-200 flex items-center justify-between px-4 bg-gray-50">
+            <div className="flex-1 flex flex-col bg-[#050505]">
+              {/* Preview Header */}
+              <div className="h-10 border-b border-white/10 flex items-center justify-between px-4 bg-[#080808]">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">Live Preview</span>
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-200 rounded text-[9px] font-mono text-gray-600">
+                  <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Live Preview</span>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded text-[9px] font-mono text-white/60">
                     <FileCode className="w-3 h-3 opacity-50" />
                     {(() => {
                       const pt = currentProject?.projectType || 'static-site';
                       const ptConfig = PROJECT_TYPES[pt];
                       if (ptConfig) return ptConfig.name;
-                      const sortedFiles = [...files].sort((a, b) => {
-                        const timeA = a.lastModified?.toMillis?.() || 0;
-                        const timeB = b.lastModified?.toMillis?.() || 0;
-                        return timeB - timeA;
-                      });
-                      let htmlFile = sortedFiles.find(f => f.path === 'index.html' || f.path === '/index.html');
-                      if (!htmlFile) htmlFile = sortedFiles.find(f => f.path.endsWith('.html'));
-                      return htmlFile ? htmlFile.path : 'No preview available';
+                      return 'Preview';
                     })()}
                   </div>
+                  {sandbox.status !== 'idle' && sandbox.status !== 'error' && (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/10 border border-green-500/20 rounded text-[9px] font-mono text-green-400">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      SANDBOX {sandbox.status.toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => {
-                      setIsRefreshingPreview(true);
-                      setPreviewKey(prev => prev + 1);
-                      setTimeout(() => setIsRefreshingPreview(false), 1000);
+                  {!isSandboxPreview ? (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const projectType = currentProject?.projectType || 'static-site';
+                          await sandbox.createSandbox();
+                          setIsSandboxPreview(true);
+                          setSandboxServerStarted(false);
+
+                          const sandboxFiles: SandboxFile[] = files.map((f) => ({
+                            path: f.path,
+                            content: f.content,
+                          }));
+
+                          if (sandboxFiles.length === 0) {
+                            showToast('No files to deploy', 'error');
+                            return;
+                          }
+
+                          await sandbox.startDevServer(projectType, sandboxFiles);
+                          setSandboxServerStarted(true);
+                          setPreviewKey((prev) => prev + 1);
+                          showToast('Sandbox ready!', 'success');
+                        } catch (err) {
+                          showToast(
+                            err instanceof Error ? err.message : 'Sandbox failed',
+                            'error'
+                          );
+                        }
+                      }}
+                      disabled={sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting'}
+                      className="p-1.5 rounded bg-accent/10 hover:bg-accent/20 text-accent transition-colors flex items-center gap-1.5 disabled:opacity-50 border border-accent/20"
+                      title="Start Live Sandbox"
+                    >
+                      {(sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting') ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                      <span className="text-[9px] font-mono font-bold uppercase">
+                        {sandbox.status === 'creating' ? 'Creating...' :
+                         sandbox.status === 'syncing' ? 'Syncing...' :
+                         sandbox.status === 'starting' ? 'Starting...' :
+                         'Start Sandbox'}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        await sandbox.destroySandbox();
+                        setIsSandboxPreview(false);
+                        setSandboxServerStarted(false);
+                        showToast('Sandbox destroyed', 'info');
+                      }}
+                      className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors flex items-center gap-1.5 border border-red-500/20"
+                      title="Destroy Sandbox"
+                    >
+                      <X className="w-3 h-3" />
+                      <span className="text-[9px] font-mono font-bold uppercase">Stop</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      if (isSandboxPreview && sandbox.sandboxId) {
+                        const sandboxFiles: SandboxFile[] = files.map((f) => ({
+                          path: f.path,
+                          content: f.content,
+                        }));
+                        try {
+                          await sandbox.syncFiles(sandboxFiles);
+                          setPreviewKey((prev) => prev + 1);
+                          showToast('Files synced', 'success');
+                        } catch (err) {
+                          showToast('Sync failed', 'error');
+                        }
+                      } else {
+                        setIsRefreshingPreview(true);
+                        setPreviewKey((prev) => prev + 1);
+                        setTimeout(() => setIsRefreshingPreview(false), 1000);
+                      }
                     }}
                     disabled={isRefreshingPreview}
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                    className="p-1.5 rounded hover:bg-white/10 text-white/50 transition-colors flex items-center gap-1.5 disabled:opacity-50"
                     title="Refresh Preview"
                   >
                     <RefreshCw className={cn("w-3 h-3", isRefreshingPreview && "animate-spin")} />
                     <span className="text-[9px] font-mono font-bold uppercase">Refresh</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
-                      const blob = new Blob([getPreviewHtml()], { type: 'text/html' });
-                      const url = URL.createObjectURL(blob);
-                      window.open(url, '_blank');
+                      if (isSandboxPreview && sandbox.previewUrl) {
+                        window.open(sandbox.previewUrl, '_blank');
+                      } else {
+                        const blob = new Blob([getPreviewHtml()], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                      }
                     }}
-                    className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors flex items-center gap-1.5"
+                    className="p-1.5 rounded hover:bg-white/10 text-white/50 transition-colors flex items-center gap-1.5"
                     title="Open in New Tab"
                   >
                     <ExternalLink className="w-3 h-3" />
@@ -3722,66 +3808,136 @@ ${context}`;
                   </button>
                 </div>
               </div>
-              <iframe 
-                key={previewKey}
-                className="flex-1 w-full border-none"
-                srcDoc={getPreviewHtml()}
-              />
-              
-              {/* Console Preview */}
-              <div className={cn(
-                "border-t border-gray-200 bg-gray-900 flex flex-col overflow-hidden transition-all duration-300",
-                isConsoleExpanded ? "h-1/3" : "h-8"
-              )}>
-                <div 
-                  className="h-8 border-b border-white/5 flex items-center justify-between px-4 bg-black/50 cursor-pointer hover:bg-black/70 transition-colors"
-                  onClick={() => setIsConsoleExpanded(!isConsoleExpanded)}
-                >
-                  <div className="flex items-center gap-2">
-                    <Terminal className="w-3 h-3 text-accent" />
-                    <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">Console Output</span>
-                    <ChevronDown className={cn("w-3 h-3 text-white/30 transition-transform duration-300", !isConsoleExpanded && "rotate-180")} />
-                  </div>
-                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {consoleLogs.some(l => l.type === 'error') && (
-                      <button 
-                        onClick={() => runDebugger()}
-                        disabled={isDebuggerRunning}
-                        className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[9px] font-mono font-bold hover:bg-purple-500/30 transition-colors disabled:opacity-50"
-                      >
-                        <Zap className={cn("w-3 h-3", isDebuggerRunning && "animate-pulse")} />
-                        RUN DEBUGGER
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => setConsoleLogs([])}
-                      className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white transition-colors"
-                      title="Clear Console"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+
+              {/* Sandbox Error */}
+              {sandbox.error && (
+                <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-[10px] font-mono flex items-center gap-2">
+                  <X className="w-3 h-3" />
+                  {sandbox.error}
+                </div>
+              )}
+
+              {/* Preview Content */}
+              {isSandboxPreview && sandbox.previewUrl ? (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <iframe
+                    key={previewKey}
+                    className="flex-1 w-full border-none bg-white"
+                    src={sandbox.previewUrl}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                  />
+                  <div className="h-[250px] border-t border-white/10 shrink-0">
+                    <Terminal
+                      onExec={sandbox.exec}
+                      disabled={!sandbox.sandboxId}
+                      workDir={sandbox.WORK_DIR}
+                    />
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] custom-scrollbar space-y-1">
-                  {consoleLogs.length === 0 && (
-                    <div className="h-full flex items-center justify-center text-white/20 italic">
-                      No logs yet. Interact with the preview to see output.
+              ) : isSandboxPreview && !sandbox.previewUrl ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 p-8">
+                  <Loader2 className="w-8 h-8 text-accent animate-spin" />
+                  <div>
+                    <p className="text-sm font-mono text-white/70">
+                      {sandbox.status === 'creating' && 'Creating sandbox...'}
+                      {sandbox.status === 'syncing' && 'Syncing files...'}
+                      {sandbox.status === 'installing' && 'Installing dependencies (this can take a minute)...'}
+                      {sandbox.status === 'starting' && 'Starting dev server...'}
+                      {sandbox.status === 'ready' && 'Getting preview URL...'}
+                      {sandbox.status === 'error' && 'Setup failed'}
+                      {sandbox.status === 'idle' && 'Initializing...'}
+                    </p>
+                    {sandbox.error && (
+                      <p className="text-[10px] font-mono text-red-400 mt-2">{sandbox.error}</p>
+                    )}
+                  </div>
+                  {/* Setup logs */}
+                  {sandbox.logs.length > 0 && (
+                    <div className="w-full max-w-lg max-h-[300px] overflow-y-auto bg-[#0a0a0a] border border-white/10 rounded-lg p-3 text-left custom-scrollbar">
+                      {sandbox.logs.map((log, i) => (
+                        <div key={i} className={cn(
+                          "font-mono text-[10px] py-0.5 whitespace-pre-wrap break-all",
+                          log.startsWith('ERROR') ? 'text-red-400' :
+                          log.startsWith('$') ? 'text-accent' :
+                          log.startsWith('stderr') ? 'text-yellow-400' :
+                          'text-white/50'
+                        )}>
+                          {log}
+                        </div>
+                      ))}
                     </div>
                   )}
-                  {consoleLogs.map((log, i) => (
-                    <div key={i} className={cn(
-                      "flex gap-2 py-0.5 px-2 rounded",
-                      log.type === 'error' ? "bg-red-500/10 text-red-400" : 
-                      log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" : 
-                      "text-white/70"
-                    )}>
-                      <span className="opacity-30 shrink-0">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
-                      <span className="break-all">{log.message}</span>
-                    </div>
-                  ))}
-                  <div ref={consoleEndRef} />
+                  <div className="w-full max-w-md h-[200px] border border-white/10 rounded-lg overflow-hidden">
+                    <Terminal
+                      onExec={sandbox.exec}
+                      disabled={sandbox.status !== 'ready'}
+                      workDir={sandbox.WORK_DIR}
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <iframe
+                    key={previewKey}
+                    className="flex-1 w-full border-none"
+                    srcDoc={getPreviewHtml()}
+                  />
+                  {/* Console Preview */}
+                  <div className={cn(
+                    "border-t border-white/10 bg-[#0a0a0a] flex flex-col overflow-hidden transition-all duration-300",
+                    isConsoleExpanded ? "h-1/3" : "h-8"
+                  )}>
+                    <div
+                      className="h-8 border-b border-white/5 flex items-center justify-between px-4 bg-black/50 cursor-pointer hover:bg-black/70 transition-colors"
+                      onClick={() => setIsConsoleExpanded(!isConsoleExpanded)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <TerminalIcon className="w-3 h-3 text-accent" />
+                        <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">Console Output</span>
+                        <ChevronDown className={cn("w-3 h-3 text-white/30 transition-transform duration-300", !isConsoleExpanded && "rotate-180")} />
+                      </div>
+                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                        {consoleLogs.some(l => l.type === 'error') && (
+                          <button
+                            onClick={() => runDebugger()}
+                            disabled={isDebuggerRunning}
+                            className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[9px] font-mono font-bold hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+                          >
+                            <Zap className={cn("w-3 h-3", isDebuggerRunning && "animate-pulse")} />
+                            RUN DEBUGGER
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setConsoleLogs([])}
+                          className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white transition-colors"
+                          title="Clear Console"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] custom-scrollbar space-y-1">
+                      {consoleLogs.length === 0 && (
+                        <div className="h-full flex items-center justify-center text-white/20 italic">
+                          No logs yet. Interact with the preview to see output.
+                        </div>
+                      )}
+                      {consoleLogs.map((log, i) => (
+                        <div key={i} className={cn(
+                          "flex gap-2 py-0.5 px-2 rounded",
+                          log.type === 'error' ? "bg-red-500/10 text-red-400" :
+                          log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" :
+                          "text-white/70"
+                        )}>
+                          <span className="opacity-30 shrink-0">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
+                          <span className="break-all">{log.message}</span>
+                        </div>
+                      ))}
+                      <div ref={consoleEndRef} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
