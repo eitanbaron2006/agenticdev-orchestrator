@@ -1628,21 +1628,72 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
         </div>
       </section>
 
-      <footer className="py-12 px-6 border-t border-white/5 bg-[#080808]">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-accent" />
-            <span className="font-mono font-bold tracking-tighter">AGENTIC_DEV</span>
-          </div>
-          
-          <div className="flex items-center gap-6">
-            <a href="#" className="opacity-30 hover:opacity-100 transition-opacity"><Twitter className="w-5 h-5" /></a>
-            <a href="#" className="opacity-30 hover:opacity-100 transition-opacity"><Github className="w-5 h-5" /></a>
+      <footer className="border-t border-white/5 bg-[#080808]">
+        <div className="max-w-7xl mx-auto px-6 pt-16 pb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-14">
+            <div className="col-span-2 md:col-span-1">
+              <div className="flex items-center gap-2 mb-5">
+                <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/20">
+                  <Layers className="w-5 h-5 text-accent" />
+                </div>
+                <span className="font-mono font-bold tracking-tighter text-lg">AGENTIC_DEV</span>
+              </div>
+              <p className="text-xs font-mono text-white/30 leading-relaxed max-w-[220px]">
+                Multi-agent orchestration for autonomous software development. Ship faster with AI-powered workflows.
+              </p>
+              <div className="flex items-center gap-3 mt-6">
+                <a href="#" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] text-white/40 transition-all hover:border-accent/30 hover:bg-accent/5 hover:text-accent">
+                  <Twitter className="w-4 h-4" />
+                </a>
+                <a href="#" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] text-white/40 transition-all hover:border-accent/30 hover:bg-accent/5 hover:text-accent">
+                  <Github className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/50 mb-5">Product</h4>
+              <ul className="space-y-3">
+                {['Features', 'Workflow', 'System', 'Pricing'].map((item) => (
+                  <li key={item}>
+                    <a href={`#${item.toLowerCase()}`} className="text-xs font-mono text-white/30 transition-colors hover:text-white/80">{item}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/50 mb-5">Resources</h4>
+              <ul className="space-y-3">
+                {['Documentation', 'API Reference', 'Changelog', 'Status'].map((item) => (
+                  <li key={item}>
+                    <a href="#" className="text-xs font-mono text-white/30 transition-colors hover:text-white/80">{item}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/50 mb-5">Legal</h4>
+              <ul className="space-y-3">
+                {['Privacy Policy', 'Terms of Service', 'Security'].map((item) => (
+                  <li key={item}>
+                    <a href="#" className="text-xs font-mono text-white/30 transition-colors hover:text-white/80">{item}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          <p className="text-[10px] font-mono opacity-30 uppercase tracking-widest">
-            © 2026 AGENTIC_DEV. ALL RIGHTS RESERVED.
-          </p>
+          <div className="border-t border-white/[0.04] pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-[10px] font-mono text-white/20 uppercase tracking-widest">
+              &copy; 2026 AGENTIC_DEV. All rights reserved.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-pulse" />
+              <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">Systems operational</span>
+            </div>
+          </div>
         </div>
       </footer>
 
