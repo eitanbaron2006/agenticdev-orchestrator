@@ -5,3 +5,9 @@ coverage/
 *.log
 .env*
 !.env.example
+.agents/
+.claude/
+.gemini/
+.codex/
+.cursor/
+.cursorrules 

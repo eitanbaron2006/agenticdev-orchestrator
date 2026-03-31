@@ -1,0 +1,16 @@
+{
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080,
+      "database": "ai-studio-fe880063-bf66-4a3e-ad58-9ebb4b01f31f"
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4040
+    },
+    "singleProjectMode": true
+  }
+}

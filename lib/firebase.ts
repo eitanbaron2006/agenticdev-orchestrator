@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { initializeFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, updateDoc, deleteDoc, Timestamp, getDocFromServer, setLogLevel } from 'firebase/firestore';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { initializeFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, updateDoc, deleteDoc, Timestamp, getDocFromServer, setLogLevel, connectFirestoreEmulator } from 'firebase/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
 type FirebaseConfig = {
@@ -40,6 +40,28 @@ export const db = initializeFirestore(app, {
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Connect to Firebase Emulators if configured
+const useEmulator = typeof window !== 'undefined' && (
+  process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === 'true' ||
+  process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST
+);
+
+if (useEmulator) {
+  console.log('[Firebase] Connecting to local emulators...');
+  try {
+    connectFirestoreEmulator(db, 'localhost', 8080);
+    console.log('[Firebase] Firestore emulator connected on localhost:8080');
+  } catch (e) {
+    console.warn('[Firebase] Firestore emulator already connected or failed:', e);
+  }
+  try {
+    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+    console.log('[Firebase] Auth emulator connected on localhost:9099');
+  } catch (e) {
+    console.warn('[Firebase] Auth emulator already connected or failed:', e);
+  }
+}
 
 // Auth Helpers
 export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
