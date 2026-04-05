@@ -66,7 +66,7 @@ const Terminal = memo(({ onExec, disabled = false, workDir = '/home/daytona/proj
 
       setIsRunning(true);
       try {
-        const result = await onExec(cmd, workDir, 30);
+        const result = await onExec(cmd, workDir, 120);
         if (result.stdout) addLine('output', result.stdout);
         if (result.stderr) addLine('error', result.stderr);
         if (result.exitCode !== 0 && !result.stdout && !result.stderr) {

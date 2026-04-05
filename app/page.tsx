@@ -3708,35 +3708,42 @@ ${context}`;
                         try {
                           const projectType = currentProject?.projectType || 'static-site';
                           await sandbox.createSandbox();
-                          setIsSandboxPreview(true);
-                          setSandboxServerStarted(false);
-
+                          
                           const sandboxFiles: SandboxFile[] = files.map((f) => ({
                             path: f.path,
                             content: f.content,
                           }));
 
                           if (sandboxFiles.length === 0) {
+                            await sandbox.destroySandbox();
                             showToast('No files to deploy', 'error');
                             return;
                           }
+
+                          // Only switch to sandbox view after sandbox is created and files are ready
+                          setIsSandboxPreview(true);
+                          setSandboxServerStarted(false);
 
                           await sandbox.startDevServer(projectType, sandboxFiles);
                           setSandboxServerStarted(true);
                           setPreviewKey((prev) => prev + 1);
                           showToast('Sandbox ready!', 'success');
                         } catch (err) {
+                          // Clean up the sandbox so it doesn't stay as garbage on the Daytona server
+                          await sandbox.destroySandbox();
+                          setIsSandboxPreview(false);
+                          setSandboxServerStarted(false);
                           showToast(
                             err instanceof Error ? err.message : 'Sandbox failed',
                             'error'
                           );
                         }
                       }}
-                      disabled={sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting'}
+                      disabled={sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting' || sandbox.status === 'installing'}
                       className="p-1.5 rounded bg-accent/10 hover:bg-accent/20 text-accent transition-colors flex items-center gap-1.5 disabled:opacity-50 border border-accent/20"
                       title="Start Live Sandbox"
                     >
-                      {(sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting') ? (
+                      {(sandbox.status === 'creating' || sandbox.status === 'syncing' || sandbox.status === 'starting' || sandbox.status === 'installing') ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
                         <Play className="w-3 h-3" />
@@ -3744,6 +3751,7 @@ ${context}`;
                       <span className="text-[9px] font-mono font-bold uppercase">
                         {sandbox.status === 'creating' ? 'Creating...' :
                          sandbox.status === 'syncing' ? 'Syncing...' :
+                         sandbox.status === 'installing' ? 'Installing...' :
                          sandbox.status === 'starting' ? 'Starting...' :
                          'Start Sandbox'}
                       </span>
