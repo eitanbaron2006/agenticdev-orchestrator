@@ -3801,7 +3801,15 @@ ${context}`;
                   <button
                     onClick={() => {
                       if (isSandboxPreview && sandbox.previewUrl) {
-                        window.open(sandbox.previewUrl, '_blank');
+                        // Extract the direct Daytona URL from our proxy URL for opening in a new tab
+                        // (auth works fine in top-level navigation, proxy is only needed for iframes)
+                        try {
+                          const proxyUrl = new URL(sandbox.previewUrl, window.location.origin);
+                          const directUrl = proxyUrl.searchParams.get('url');
+                          window.open(directUrl || sandbox.previewUrl, '_blank');
+                        } catch {
+                          window.open(sandbox.previewUrl, '_blank');
+                        }
                       } else {
                         const blob = new Blob([getPreviewHtml()], { type: 'text/html' });
                         const url = URL.createObjectURL(blob);

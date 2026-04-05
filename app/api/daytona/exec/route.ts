@@ -87,10 +87,11 @@ export async function GET(request: Request) {
     const preview = await sandbox.getPreviewLink(port);
 
     console.log(`[Daytona Preview] URL: ${preview.url}`);
+    console.log(`[Daytona Preview] Token: ${preview.token ? preview.token.slice(0, 20) + '...' : 'NULL/EMPTY'}`);
 
     return NextResponse.json({
       url: preview.url,
-      token: preview.token,
+      token: preview.token || null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get preview URL';

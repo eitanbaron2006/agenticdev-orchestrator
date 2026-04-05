@@ -188,21 +188,19 @@ export function useSandbox() {
           throw new Error(data.error || `Preview API error: ${res.status}`);
         }
 
-        // Append token to URL so the iframe can bypass proxy authentication
-        // Without this, the proxy redirects to a login page which fails in cross-origin iframes
-        let fullUrl = data.url;
-        if (data.token) {
-          const separator = fullUrl.includes('?') ? '&' : '?';
-          fullUrl = `${fullUrl}${separator}token=${encodeURIComponent(data.token)}`;
-        }
+        // Route through our server-side reverse proxy which authenticates
+        // with the Daytona proxy using DAYTONA_PROXY_API_KEY (bypasses OIDC)
+        const directUrl = data.url;
+        const proxiedUrl = `/api/sandbox-proxy?url=${encodeURIComponent(directUrl)}`;
 
-        addLog(`Preview URL: ${fullUrl}`);
-        setState((s) => ({ ...s, previewUrl: fullUrl }));
-        return fullUrl;
+        addLog(`Preview URL (direct): ${directUrl}`);
+        addLog(`Preview URL (proxied): ${proxiedUrl}`);
+        setState((s) => ({ ...s, previewUrl: proxiedUrl }));
+        return proxiedUrl;
       } catch (err) {
         clearTimeout(timeoutId);
         if (err instanceof Error && err.name === 'AbortError') {
-          throw new Error('Preview URL request timed out after 30s. Check that the Daytona proxy service is running on port 4000.');
+          throw new Error('Preview URL request timed out after 30s.');
         }
         throw err;
       }
