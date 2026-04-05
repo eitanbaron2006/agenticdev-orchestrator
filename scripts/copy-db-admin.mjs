@@ -1,99 +1,98 @@
 /**
- * Copy Firestore data + Auth users from cloud to emulator using Admin SDK.
+ * Copy Auth users from cloud to the local Auth emulator using Firebase Auth export.
  * Usage: node scripts/copy-db-admin.mjs
  * Make sure: firebase emulators:start is running
  */
 
-import { initializeApp, cert, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+import {
+  DEFAULT_AUTH_EMULATOR_HOST,
+  DEFAULT_AUTH_EXPORT_FILE,
+  clearAuthEmulator,
+  exportRemoteAuth,
+  importAuthExportToEmulator,
+  verifyAuthExportInEmulator,
+} from './auth-copy-utils.mjs';
 
 const PROJECT_ID = 'gen-lang-client-0066141798';
-const DB_ID = 'ai-studio-fe880063-bf66-4a3e-ad58-9ebb4b01f31f';
-
-const COLLECTIONS = ['projects', 'conversations', 'users', 'deployments', 'generatedFiles', 'projectTemplates', 'availableSkills'];
-
-// Remote (cloud) - uses application default credentials (gcloud auth)
-const remoteApp = initializeApp({
-  credential: applicationDefault(),
-  projectId: PROJECT_ID,
-}, 'remote');
-const remoteDb = getFirestore(remoteApp, DB_ID);
-const remoteAuth = getAuth(remoteApp);
-
-// Local emulator - no auth needed
-const localApp = initializeApp({ projectId: PROJECT_ID }, 'local');
-const localDb = getFirestore(localApp);
-const localAuth = getAuth(localApp);
-localDb.settings({ host: 'localhost:8080', ssl: false });
-
-async function copyCollection(name) {
-  process.stdout.write(`  ${name}... `);
-  try {
-    const snap = await remoteDb.collection(name).get();
-    if (snap.empty) { console.log('empty'); return 0; }
-    let count = 0;
-    const docs = snap.docs;
-    for (let i = 0; i < docs.length; i += 10) {
-      const batch = localDb.batch();
-      const chunk = docs.slice(i, Math.min(i + 10, docs.length));
-      for (const d of chunk) {
-        batch.set(localDb.collection(name).doc(d.id), d.data());
-      }
-      await batch.commit();
-      count += chunk.length;
-    }
-    console.log(`${count} docs`);
-    return count;
-  } catch (err) {
-    console.log(`ERROR: ${err.message}`);
-    return 0;
-  }
-}
+const authEmulatorHost = DEFAULT_AUTH_EMULATOR_HOST;
+const AUTH_EXPORT_FILE = DEFAULT_AUTH_EXPORT_FILE;
 
 async function copyAuthUsers() {
   process.stdout.write(`  Auth users... `);
+
   try {
-    let count = 0;
-    let pageToken;
-    do {
-      const listResult = await remoteAuth.listUsers(100, pageToken);
-      for (const user of listResult.users) {
-        try {
-          await localAuth.createUser({
-            uid: user.uid,
-            email: user.email,
-            emailVerified: user.emailVerified,
-            displayName: user.displayName,
-            photoURL: user.photoURL,
-            disabled: user.disabled,
-          });
-          count++;
-        } catch (err) {
-          if (err.code !== 'auth/uid-already-exists') {
-            console.log(`\n    Warning: ${user.email}: ${err.message}`);
-          }
+    const exportedAuth = await exportRemoteAuth(PROJECT_ID, AUTH_EXPORT_FILE);
+    const remoteUsers = exportedAuth.users || [];
+
+    console.log(`\n    Exported users from project: ${PROJECT_ID}`);
+    console.log(`\n    Found ${remoteUsers.length} users in remote export`);
+
+    for (const user of remoteUsers) {
+      const label = user.email || user.phoneNumber || '(no identifier)';
+      console.log(`    - ${label} (${user.localId})`);
+    }
+
+    await clearAuthEmulator(PROJECT_ID, authEmulatorHost);
+    const result = await importAuthExportToEmulator(PROJECT_ID, exportedAuth, {
+      emulatorHost: authEmulatorHost,
+    });
+    const verification = await verifyAuthExportInEmulator(PROJECT_ID, exportedAuth, {
+      emulatorHost: authEmulatorHost,
+    });
+
+    console.log(`\n    ${result.successCount}/${remoteUsers.length} users copied`);
+    console.log(
+      `    Verification: ${verification.matches.length} matched, ` +
+        `${verification.mismatches.length} mismatched, ` +
+        `${verification.missing.length} missing`,
+    );
+
+    for (const match of verification.matches.slice(0, 5)) {
+      console.log(
+        `    Verified ${match.identifier}: uid=${match.uid}, providers=${match.providerIds.join(', ') || 'none'}`,
+      );
+    }
+
+    if (result.failures.length > 0) {
+      for (const failure of result.failures.slice(0, 5)) {
+        console.log(`    Warning [${failure.uid || failure.index}]: ${failure.message}`);
+      }
+    }
+
+    if (verification.mismatches.length > 0) {
+      for (const mismatch of verification.mismatches.slice(0, 5)) {
+        console.log(`    Mismatch for ${mismatch.identifier} (${mismatch.uid})`);
+        for (const difference of mismatch.differences) {
+          console.log(
+            `      ${difference.field}: expected=${JSON.stringify(difference.expected)} actual=${JSON.stringify(difference.actual)}`,
+          );
         }
       }
-      pageToken = listResult.pageToken;
-    } while (pageToken);
-    console.log(`${count} users`);
-    return count;
+    }
+
+    if (verification.missing.length > 0) {
+      for (const missing of verification.missing.slice(0, 5)) {
+        console.log(`    Missing from emulator: ${missing.identifier} (${missing.uid})`);
+      }
+    }
+
+    return result.successCount;
   } catch (err) {
-    console.log(`ERROR: ${err.message}`);
+    console.log(`\n    ERROR: ${err.message}`);
     return 0;
   }
 }
 
 async function main() {
-  console.log(`\nCloud → Emulator | ${PROJECT_ID}/${DB_ID}\n`);
-  let total = 0;
-  for (const col of COLLECTIONS) {
-    total += await copyCollection(col);
-  }
-  total += await copyAuthUsers();
+  console.log(`\nCloud -> Auth Emulator | ${PROJECT_ID} | auth@${authEmulatorHost}\n`);
+
+  const total = await copyAuthUsers();
+
   console.log(`\nDone: ${total} items\n`);
   process.exit(0);
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

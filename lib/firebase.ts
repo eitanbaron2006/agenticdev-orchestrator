@@ -1,6 +1,14 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { initializeFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, updateDoc, deleteDoc, Timestamp, getDocFromServer, setLogLevel, connectFirestoreEmulator } from 'firebase/firestore';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import {
+  connectAuthEmulator,
+  getAuth,
+  GoogleAuthProvider,
+  signInWithCredential,
+  signInWithPopup,
+  signOut,
+  type User as FirebaseUser,
+} from 'firebase/auth';
+import { initializeFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, updateDoc, deleteDoc, Timestamp, setLogLevel, connectFirestoreEmulator } from 'firebase/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
 type FirebaseConfig = {
@@ -27,8 +35,25 @@ const firebaseConfig: FirebaseConfig = {
     process.env.NEXT_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId,
 };
 
+const browserUsesEmulators =
+  typeof window !== 'undefined' &&
+  process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === 'true';
+
+function getOrInitFirebaseApp(name?: string) {
+  if (!name) {
+    return getApps().length ? getApp() : initializeApp(firebaseConfig);
+  }
+
+  const existing = getApps().find((appInstance) => appInstance.name === name);
+  return existing || initializeApp(firebaseConfig, name);
+}
+
+const activeFirestoreDatabaseId = browserUsesEmulators
+  ? undefined
+  : firebaseConfig.firestoreDatabaseId;
+
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = getOrInitFirebaseApp();
 
 // Suppress benign internal Firestore warnings like "Disconnecting idle stream"
 setLogLevel('silent');
@@ -36,47 +61,101 @@ setLogLevel('silent');
 // Use initializeFirestore with force long polling for better stability in proxy/cloud environments and to prevent gRPC idle stream disconnects
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
+}, activeFirestoreDatabaseId);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Connect to Firebase Emulators if configured
-const useEmulator = typeof window !== 'undefined' && (
-  process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === 'true' ||
-  process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST
-);
+function parseHostPort(hostValue: string, defaultPort: number) {
+  const normalized = hostValue.replace(/^https?:\/\//, '');
+  const [host = 'localhost', portValue] = normalized.split(':');
+  const port = Number(portValue || defaultPort);
+  const resolvedHost = host === 'localhost' ? '127.0.0.1' : host;
 
-if (useEmulator) {
-  console.log('[Firebase] Connecting to local emulators...');
+  return {
+    host: resolvedHost,
+    port: Number.isFinite(port) ? port : defaultPort,
+  };
+}
+
+// Firestore emulator is useful for local data iteration.
+const firestoreEmulatorHost = process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST;
+const useFirestoreEmulator =
+  typeof window !== 'undefined' &&
+  (process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === 'true' || !!firestoreEmulatorHost);
+
+// Auth emulator is enabled in local emulator mode, but Google sign-in will still
+// use a real Google chooser by fetching a real credential first and then
+// exchanging it with the emulator via signInWithCredential.
+const authEmulatorHost =
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST ||
+  (
+    process.env.NEXT_PUBLIC_USE_AUTH_EMULATOR === 'true' ||
+    process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === 'true'
+      ? 'localhost:9099'
+      : ''
+  );
+const useAuthEmulator = typeof window !== 'undefined' && !!authEmulatorHost;
+
+if (useFirestoreEmulator) {
+  const { host, port } = parseHostPort(firestoreEmulatorHost || 'localhost:8080', 8080);
+  console.log(`[Firebase] Connecting Firestore to emulator at ${host}:${port}...`);
   try {
-    connectFirestoreEmulator(db, 'localhost', 8080);
-    console.log('[Firebase] Firestore emulator connected on localhost:8080');
+    connectFirestoreEmulator(db, host, port);
+    console.log(`[Firebase] Firestore emulator connected on ${host}:${port}`);
   } catch (e) {
     console.warn('[Firebase] Firestore emulator already connected or failed:', e);
   }
+}
+
+if (useAuthEmulator) {
+  const emulatorUrl = authEmulatorHost.startsWith('http')
+    ? authEmulatorHost
+    : `http://${authEmulatorHost}`;
+
+  console.log(`[Firebase] Connecting Auth to emulator at ${emulatorUrl}...`);
   try {
-    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-    console.log('[Firebase] Auth emulator connected on localhost:9099');
+    connectAuthEmulator(auth, emulatorUrl, { disableWarnings: true });
+    console.log(`[Firebase] Auth emulator connected on ${emulatorUrl}`);
   } catch (e) {
     console.warn('[Firebase] Auth emulator already connected or failed:', e);
   }
+} else if (typeof window !== 'undefined') {
+  console.log('[Firebase] Auth is using the remote Firebase project');
 }
 
 // Auth Helpers
-export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
-export const logout = () => signOut(auth);
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Connection Test
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client is offline.");
-    }
+let remotePopupAuth = null as ReturnType<typeof getAuth> | null;
+
+function getRemotePopupAuth() {
+  if (!remotePopupAuth) {
+    const popupApp = getOrInitFirebaseApp('remote-popup-auth');
+    remotePopupAuth = getAuth(popupApp);
   }
+
+  return remotePopupAuth;
 }
-testConnection();
+
+export async function loginWithGoogle() {
+  if (!useAuthEmulator) {
+    return signInWithPopup(auth, googleProvider);
+  }
+
+  const popupAuth = getRemotePopupAuth();
+  const popupResult = await signInWithPopup(popupAuth, googleProvider);
+  const credential = GoogleAuthProvider.credentialFromResult(popupResult);
+
+  await signOut(popupAuth).catch(() => {});
+
+  if (!credential?.idToken) {
+    throw new Error('Google sign-in did not return an ID token for the Auth emulator.');
+  }
+
+  return signInWithCredential(auth, GoogleAuthProvider.credential(credential.idToken));
+}
+
+export const logout = () => signOut(auth);
 
 export type { FirebaseUser };

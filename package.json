@@ -7,7 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "clean": "next clean"
+    "clean": "next clean",
+    "emulators": "firebase emulators:start --project gen-lang-client-0066141798",
+    "emulators:import": "firebase emulators:start --project gen-lang-client-0066141798 --import=./emulator-data --export-on-exit=./emulator-data",
+    "emulators:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-emulators.ps1",
+    "copy:firestore": "node scripts/copy-db.mjs",
+    "copy:auth": "node scripts/copy-db-admin.mjs",
+    "copy:emulators": "node scripts/copy-all.mjs"
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.158.1",
