@@ -1,0 +1,1 @@
+-- Intentionally empty. The app seeds default skills on first authenticated load.

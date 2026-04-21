@@ -56,16 +56,9 @@ import {
   db, 
   loginWithGoogle, 
   logout, 
-  type FirebaseUser 
-} from '@/lib/firebase';
-import { 
-  onAuthStateChanged, 
-  type User as AuthUser 
-} from 'firebase/auth';
-import LandingPage from '@/components/LandingPage';
-import AuthScreen from '@/components/AuthScreen';
-import Terminal from '@/components/Terminal';
-import { useSandbox, type SandboxFile } from '@/hooks/useSandbox';
+  onAuthStateChanged,
+  type AuthUser 
+} from '@/lib/supabase';
 import { 
   collection, 
   doc, 
@@ -79,7 +72,11 @@ import {
   deleteDoc, 
   Timestamp,
   orderBy
-} from 'firebase/firestore';
+} from '@/lib/supabase-data';
+import LandingPage from '@/components/LandingPage';
+import AuthScreen from '@/components/AuthScreen';
+import Terminal from '@/components/Terminal';
+import { useSandbox, type SandboxFile } from '@/hooks/useSandbox';
 
 // --- Utils ---
 function cn(...inputs: ClassValue[]) {
@@ -214,7 +211,7 @@ enum OperationType {
   WRITE = 'write',
 }
 
-interface FirestoreErrorInfo {
+interface DataStoreErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
@@ -233,8 +230,8 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
+function handleDataStoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: DataStoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
@@ -252,7 +249,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  console.error('Supabase data error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -1167,7 +1164,7 @@ const SidebarContent = ({
         </div>
         <div>
           <h1 className="font-mono font-bold text-sm tracking-tighter">AGENTIC_DEV</h1>
-          <p className="text-[10px] font-mono opacity-40 uppercase tracking-widest">v2.5.0-FIREBASE</p>
+          <p className="text-[10px] font-mono opacity-40 uppercase tracking-widest">v2.5.0-SUPABASE</p>
         </div>
       </div>
 
@@ -1248,7 +1245,7 @@ const SidebarContent = ({
           <span className="text-[10px] font-mono text-accent uppercase tracking-wider">System Status</span>
         </div>
         <div className="flex items-center justify-between text-[10px] font-mono">
-          <span className="opacity-50">Firestore</span>
+          <span className="opacity-50">Supabase</span>
           <span className="text-accent">CONNECTED</span>
         </div>
       </div>
@@ -1980,7 +1977,7 @@ export default function AgenticDevPage() {
         });
         filesSaved++;
       } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
+        handleDataStoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
       }
     }
 
@@ -1991,7 +1988,7 @@ export default function AgenticDevPage() {
         await deleteDoc(doc(db, `projects/${projectId}/files`, fileId));
         filesDeleted++;
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `projects/${projectId}/files/${fileId}`);
+        handleDataStoreError(err, OperationType.DELETE, `projects/${projectId}/files/${fileId}`);
       }
     }
 
@@ -2015,7 +2012,7 @@ export default function AgenticDevPage() {
       await setDoc(doc(db, `projects/${currentProject.id}/messages`, debuggerMsgId), debuggerMsg);
       lastNotifiedErrorCount.current = consoleLogs.filter(l => l.type === 'error').length;
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
+      handleDataStoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
     }
   }, [currentProject, consoleLogs]);
 
@@ -2059,7 +2056,7 @@ export default function AgenticDevPage() {
     try {
       await setDoc(doc(db, `projects/${currentProject.id}/messages`, userMsgId), userMsg);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
+      handleDataStoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
     }
 
     let context = `PROJECT TYPE: ${projectTypeConfig.name}\n`;
@@ -2148,7 +2145,7 @@ ${context}`;
         lastModified: Timestamp.now()
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
   };
 
@@ -2199,7 +2196,7 @@ ${context}`;
         lastModified: Timestamp.now()
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
   };
 
@@ -2223,7 +2220,7 @@ ${context}`;
         lastModified: Timestamp.now()
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
   };
 
@@ -2245,7 +2242,7 @@ ${context}`;
     try {
       await setDoc(doc(db, `projects/${currentProject.id}/messages`, userMsgId), userMsg);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
+      handleDataStoreError(err, OperationType.CREATE, `projects/${currentProject.id}/messages`);
     }
 
     const orchestrationAgents = AGENTS.filter(a => a.role !== 'Debugger');
@@ -2505,7 +2502,7 @@ ${context}`;
           }
         }
       }
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'projects'));
+    }, (err) => handleDataStoreError(err, OperationType.LIST, 'projects'));
     return () => unsubscribe();
   }, [user, currentProject]);
 
@@ -2535,10 +2532,10 @@ ${context}`;
             category: 'Styling'
           },
           {
-            id: 'firebase-wizard',
-            name: 'Firebase Wizard',
-            description: 'Expert in Firestore, Auth, and security rules.',
-            content: 'You are an expert in Firebase. Use Firestore for real-time data, Firebase Auth for security, and write robust security rules.',
+            id: 'supabase-wizard',
+            name: 'Supabase Wizard',
+            description: 'Expert in Supabase Auth, Postgres, RLS, and Realtime.',
+            content: 'You are an expert in Supabase. Use Postgres, RLS policies, Supabase Auth, and Realtime channels with secure authorization.',
             category: 'Backend'
           },
           {
@@ -2609,7 +2606,7 @@ ${context}`;
           setDoc(doc(db, 'availableSkills', skill.id), skill);
         });
       }
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'availableSkills'));
+    }, (err) => handleDataStoreError(err, OperationType.LIST, 'availableSkills'));
     return () => unsubscribe();
   }, [user]);
 
@@ -2679,7 +2676,7 @@ ${context}`;
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fList = snapshot.docs.map(d => d.data() as ProjectFile);
       setFiles(fList);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `projects/${currentProject.id}/files`));
+    }, (err) => handleDataStoreError(err, OperationType.LIST, `projects/${currentProject.id}/files`));
     return () => unsubscribe();
   }, [currentProject]); // Include currentProject to satisfy linter and ensure clearing logic works
 
@@ -2693,7 +2690,7 @@ ${context}`;
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tList = snapshot.docs.map(d => d.data() as Task);
       setTasks(tList);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `projects/${currentProject.id}/tasks`));
+    }, (err) => handleDataStoreError(err, OperationType.LIST, `projects/${currentProject.id}/tasks`));
     return () => unsubscribe();
   }, [currentProject]);
 
@@ -2707,7 +2704,7 @@ ${context}`;
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const mList = snapshot.docs.map(d => d.data() as Message);
       setMessages(mList);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `projects/${currentProject.id}/messages`));
+    }, (err) => handleDataStoreError(err, OperationType.LIST, `projects/${currentProject.id}/messages`));
     return () => unsubscribe();
   }, [currentProject]);
 
@@ -2794,7 +2791,7 @@ ${context}`;
       setCurrentProject(newProject);
       setActiveTab('chat');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'projects');
+      handleDataStoreError(err, OperationType.CREATE, 'projects');
     }
   };
 
@@ -2809,7 +2806,7 @@ ${context}`;
         lastModified: Timestamp.now()
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}/files/${selectedFile.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}/files/${selectedFile.id}`);
     }
   };
 
@@ -2830,7 +2827,7 @@ ${context}`;
     try {
       await setDoc(doc(db, `projects/${currentProject.id}/tasks`, id), newTask);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `projects/${currentProject.id}/tasks`);
+      handleDataStoreError(err, OperationType.CREATE, `projects/${currentProject.id}/tasks`);
     }
   };
 
@@ -2882,7 +2879,7 @@ ${context}`;
         completed: !task.completed
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}/tasks/${task.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}/tasks/${task.id}`);
     }
   };
 
@@ -2891,7 +2888,7 @@ ${context}`;
     try {
       await deleteDoc(doc(db, `projects/${currentProject.id}/tasks`, taskId));
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `projects/${currentProject.id}/tasks/${taskId}`);
+      handleDataStoreError(err, OperationType.DELETE, `projects/${currentProject.id}/tasks/${taskId}`);
     }
   };
 
@@ -2903,7 +2900,7 @@ ${context}`;
       setIsSettingsModalOpen(false);
       setIsDeleteConfirmOpen(false);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `projects/${currentProject.id}`);
+      handleDataStoreError(err, OperationType.DELETE, `projects/${currentProject.id}`);
     }
   };
 
@@ -2929,7 +2926,7 @@ ${context}`;
       });
       setIsSettingsModalOpen(false);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
+      handleDataStoreError(err, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
   };
 
@@ -2953,7 +2950,7 @@ ${context}`;
         lastModified: Timestamp.now()
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `projects/${currentProject.id}`);
+      handleDataStoreError(error, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
   };
 

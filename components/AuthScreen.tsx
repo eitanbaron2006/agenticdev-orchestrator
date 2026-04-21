@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import type { FirebaseError } from 'firebase/app';
 import { 
   LogIn, 
   Layers, 
@@ -24,20 +23,17 @@ export default function AuthScreen({ onLogin, onBack }: AuthScreenProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const getAuthErrorMessage = (error: unknown) => {
-    const code = (error as FirebaseError | undefined)?.code;
+    const message = (error as Error | undefined)?.message || '';
 
-    switch (code) {
-      case 'auth/unauthorized-domain':
-        return 'This domain is not authorized in Firebase Auth. Add localhost under Authentication > Settings > Authorized domains.';
-      case 'auth/operation-not-allowed':
-        return 'Google sign-in is not enabled for this Firebase project. Enable the Google provider in Authentication > Sign-in method.';
-      case 'auth/popup-blocked':
-        return 'The browser blocked the Google sign-in popup. Allow popups for this site and try again.';
-      case 'auth/popup-closed-by-user':
-        return 'The Google sign-in popup was closed before authentication completed.';
-      default:
-        return (error as Error | undefined)?.message || 'Google sign-in failed.';
+    if (message.includes('Supabase is not configured')) {
+      return message;
     }
+
+    if (message.toLowerCase().includes('provider')) {
+      return 'Google OAuth is not enabled for this Supabase project. Configure the Google provider and redirect URL in the selected local Supabase instance.';
+    }
+
+    return message || 'Google sign-in failed.';
   };
 
   const handleLogin = async () => {
