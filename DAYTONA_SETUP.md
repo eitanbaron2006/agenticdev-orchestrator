@@ -25,7 +25,7 @@ This starts all required services:
 
 | Service | Purpose |
 |---------|---------|
-| **API** | Main Daytona application server (port 3000) |
+| **API** | Main Daytona application server (port 3002) |
 | **Proxy** | Request proxy for sandbox previews (port 4000) |
 | **Runner** | Hosts and manages sandbox containers |
 | **SSH Gateway** | Handles sandbox SSH access (port 2222) |
@@ -60,12 +60,12 @@ On **Windows**, you can manually add to `C:\Windows\System32\drivers\etc\hosts`:
 
 ## Step 4: Access the Dashboard & Create API Key
 
-1. Open **http://localhost:3000** in your browser
+1. Open **http://localhost:3002** in your browser
 2. Log in with default credentials:
    - Email: `dev@daytona.io`
    - Password: `password`
-3. Go to **http://localhost:3000/dashboard/snapshots** and make sure the default snapshot is **active**
-4. Navigate to **API Keys**: http://localhost:3000/dashboard/keys
+3. Go to **http://localhost:3002/dashboard/snapshots** and make sure the default snapshot is **active**
+4. Navigate to **API Keys**: http://localhost:3002/dashboard/keys
 5. Click **Create Key**, give it a name, and copy the generated key
 
 ## Step 5: Configure the App
@@ -74,7 +74,7 @@ Open `.env.local` in the project root and set:
 
 ```env
 DAYTONA_API_KEY=paste-your-api-key-here
-DAYTONA_API_URL=http://localhost:3000/api
+DAYTONA_API_URL=http://localhost:3002/api
 ```
 
 ## Step 6: Start the App
@@ -124,7 +124,7 @@ Make sure `.env.local` has the correct values and you restarted `npm run dev`.
 - Ensure `docker compose ... up -d` completed successfully
 - Check all containers are running: `docker compose -f docker/docker-compose.yaml ps`
 - Make sure Docker Desktop is running
-- Verify the default snapshot is active at http://localhost:3000/dashboard/snapshots
+- Verify the default snapshot is active at http://localhost:3002/dashboard/snapshots
 
 ### Sandbox preview URL not loading
 - Run the proxy DNS setup script: `./scripts/setup-proxy-dns.sh`

@@ -5,7 +5,7 @@ let daytonaClient: Daytona | null = null;
 export function getDaytonaClient(): Daytona {
   if (!daytonaClient) {
     const apiKey = process.env.DAYTONA_API_KEY;
-    const apiUrl = process.env.DAYTONA_API_URL || 'http://localhost:3000/api';
+    const apiUrl = process.env.DAYTONA_API_URL || 'http://localhost:3002/api';
 
     if (!apiKey) {
       throw new Error(
