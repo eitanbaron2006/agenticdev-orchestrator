@@ -84,14 +84,15 @@ export async function GET(request: Request) {
 
     const daytona = getDaytonaClient();
     const sandbox = await daytona.get(sandboxId);
-    const preview = await sandbox.getPreviewLink(port);
+    const preview = await sandbox.getSignedPreviewUrl(port, 60 * 60);
 
     console.log(`[Daytona Preview] URL: ${preview.url}`);
-    console.log(`[Daytona Preview] Token: ${preview.token ? preview.token.slice(0, 20) + '...' : 'NULL/EMPTY'}`);
+    console.log(`[Daytona Preview] Signed token: ${preview.token ? preview.token.slice(0, 8) + '...' : 'NULL/EMPTY'}`);
 
     return NextResponse.json({
       url: preview.url,
-      token: preview.token || null,
+      token: null,
+      signed: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get preview URL';

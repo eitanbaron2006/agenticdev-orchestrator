@@ -77,6 +77,7 @@ import LandingPage from '@/components/LandingPage';
 import AuthScreen from '@/components/AuthScreen';
 import Terminal from '@/components/Terminal';
 import { useSandbox, type SandboxFile } from '@/hooks/useSandbox';
+import { getSandboxPopoutUrl, shouldKeepSandboxOpenAfterStartError } from '@/lib/sandbox-files';
 
 // --- Utils ---
 function cn(...inputs: ClassValue[]) {
@@ -3702,9 +3703,11 @@ ${context}`;
                   {!isSandboxPreview ? (
                     <button
                       onClick={async () => {
+                        let sandboxCreated = false;
                         try {
                           const projectType = currentProject?.projectType || 'static-site';
                           await sandbox.createSandbox();
+                          sandboxCreated = true;
                           
                           const sandboxFiles: SandboxFile[] = files.map((f) => ({
                             path: f.path,
@@ -3726,9 +3729,11 @@ ${context}`;
                           setPreviewKey((prev) => prev + 1);
                           showToast('Sandbox ready!', 'success');
                         } catch (err) {
-                          // Clean up the sandbox so it doesn't stay as garbage on the Daytona server
-                          await sandbox.destroySandbox();
-                          setIsSandboxPreview(false);
+                          if (shouldKeepSandboxOpenAfterStartError(sandboxCreated)) {
+                            setIsSandboxPreview(true);
+                          } else {
+                            setIsSandboxPreview(false);
+                          }
                           setSandboxServerStarted(false);
                           showToast(
                             err instanceof Error ? err.message : 'Sandbox failed',
@@ -3798,12 +3803,8 @@ ${context}`;
                   <button
                     onClick={() => {
                       if (isSandboxPreview && sandbox.previewUrl) {
-                        // Extract the direct Daytona URL from our proxy URL for opening in a new tab
-                        // (auth works fine in top-level navigation, proxy is only needed for iframes)
                         try {
-                          const proxyUrl = new URL(sandbox.previewUrl, window.location.origin);
-                          const directUrl = proxyUrl.searchParams.get('url');
-                          window.open(directUrl || sandbox.previewUrl, '_blank');
+                          window.open(getSandboxPopoutUrl(sandbox.previewUrl, window.location.origin), '_blank');
                         } catch {
                           window.open(sandbox.previewUrl, '_blank');
                         }

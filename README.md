@@ -21,11 +21,13 @@ View your app in AI Studio: https://ai.studio/apps/fe880063-bf66-4a3e-ad58-9ebb4
    `GOOGLE_CLOUD_LOCATION=global`
    `GOOGLE_GENAI_USE_VERTEXAI=true`
 4. Configure the local Supabase instance in [.env.local](.env.local):
-   `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`
+   `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:56321`
    `NEXT_PUBLIC_SUPABASE_ANON_KEY=...`
    `SUPABASE_SERVICE_ROLE_KEY=...`
    `NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_TO=http://127.0.0.1:3000`
 5. Configure Google OAuth in `supabase/config.toml` and the local `.env` file used by the Supabase CLI.
+   In Google Cloud Console, add this exact Authorized redirect URI:
+   `http://127.0.0.1:56321/auth/v1/callback`
 6. Run the app:
    `npm run dev`
 

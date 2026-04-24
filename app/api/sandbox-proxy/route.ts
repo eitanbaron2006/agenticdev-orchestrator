@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import * as http from 'node:http';
+import * as https from 'node:https';
+import { getSandboxProxyFetchTarget } from '@/lib/sandbox-files';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,15 +12,87 @@ const HOP_BY_HOP_HEADERS = new Set([
   'te', 'trailers', 'transfer-encoding', 'upgrade', 'content-encoding',
 ]);
 
+interface UpstreamResponse {
+  status: number;
+  headers: Headers;
+  body: Buffer;
+}
+
+function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+}
+
+function appendNodeHeaders(target: Headers, source: http.IncomingHttpHeaders) {
+  Object.entries(source).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => target.append(key, item));
+      return;
+    }
+
+    if (value !== undefined) {
+      target.set(key, String(value));
+    }
+  });
+}
+
+async function requestUpstream(
+  fetchUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: Buffer
+): Promise<UpstreamResponse> {
+  const url = new URL(fetchUrl);
+  const client = url.protocol === 'https:' ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = client.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+
+        res.on('data', (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const responseHeaders = new Headers();
+          appendNodeHeaders(responseHeaders, res.headers);
+          resolve({
+            status: res.statusCode || 502,
+            headers: responseHeaders,
+            body: Buffer.concat(chunks),
+          });
+        });
+      }
+    );
+
+    req.setTimeout(30000, () => {
+      req.destroy(new Error('Upstream request timed out'));
+    });
+    req.on('error', reject);
+
+    if (body && body.length > 0) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
 /**
  * Server-side reverse proxy for Daytona sandbox previews.
  * 
- * The Daytona proxy uses OIDC auth (Dex) which requires cookies.
- * Browsers block third-party cookies in iframes (cross-origin).
- * This route solves it by proxying requests through our own origin.
+ * Daytona preview hosts use subdomains like 3000-token.proxy.localhost.
+ * Chromium resolves those hosts, but Node fetch does not on Windows. This
+ * route connects to 127.0.0.1 while preserving the original Host header.
  * 
- * The iframe loads from /api/sandbox-proxy?url=... (same origin as our app),
- * and this route fetches the actual content from the Daytona proxy server-side.
+ * The iframe loads from /api/sandbox-proxy?url=... on our origin, and the
+ * signed Daytona preview URL prevents the proxy from redirecting to OIDC auth.
  */
 async function handleProxy(request: Request): Promise<Response> {
   try {
@@ -28,25 +103,22 @@ async function handleProxy(request: Request): Promise<Response> {
       return NextResponse.json({ error: 'url parameter is required' }, { status: 400 });
     }
 
-    // Get optional preview token from query params
     const previewToken = searchParams.get('token');
-    // The proxy has its own API key (PROXY_API_KEY in the proxy container)
-    // This is different from the Daytona API key — it bypasses OIDC auth
-    const proxyApiKey = process.env.DAYTONA_PROXY_API_KEY || '';
 
-    console.log(`[Sandbox Proxy] ${request.method} -> ${targetUrl} (proxyKey: ${proxyApiKey ? 'yes' : 'NO'})`);
+    const { fetchUrl, hostHeader } = getSandboxProxyFetchTarget(targetUrl);
+
+    console.log(`[Sandbox Proxy] ${request.method} -> ${targetUrl} via ${fetchUrl}`);
 
     const headers: Record<string, string> = {
       'Accept': request.headers.get('accept') || '*/*',
       'Accept-Language': request.headers.get('accept-language') || 'en',
     };
 
-    // Authenticate with the Daytona proxy using its PROXY_API_KEY
-    // Priority: proxy API key > preview token > Daytona API key
-    const authToken = proxyApiKey || previewToken || process.env.DAYTONA_API_KEY || '';
-    if (authToken) {
-      headers['x-daytona-preview-token'] = authToken;
-      headers['Authorization'] = `Bearer ${authToken}`;
+    if (previewToken) {
+      headers['X-Daytona-Preview-Token'] = previewToken;
+    }
+    if (hostHeader) {
+      headers['Host'] = hostHeader;
     }
 
     // Forward content-type for POST/PUT requests
@@ -55,18 +127,12 @@ async function handleProxy(request: Request): Promise<Response> {
       headers['Content-Type'] = contentType;
     }
 
-    const fetchOptions: RequestInit = {
-      method: request.method,
-      headers,
-      redirect: 'manual', // Don't follow auth redirects — detect them instead
-    };
-
-    // Forward body for non-GET requests
+    let requestBody: Buffer | undefined;
     if (request.method !== 'GET' && request.method !== 'HEAD') {
-      fetchOptions.body = await request.text();
+      requestBody = Buffer.from(await request.arrayBuffer());
     }
 
-    const upstream = await fetch(targetUrl, fetchOptions);
+    const upstream = await requestUpstream(fetchUrl, request.method, headers, requestBody);
 
     // If the proxy redirects to a login page, auth failed
     if (upstream.status >= 300 && upstream.status < 400) {
@@ -81,7 +147,7 @@ async function handleProxy(request: Request): Promise<Response> {
       </style></head><body><div class="box">
         <h2>Sandbox Preview Auth Required</h2>
         <p>The Daytona proxy requires authentication.</p>
-        <p>Please check your <code>DAYTONA_API_KEY</code> in <code>.env.local</code></p>
+        <p>Start the sandbox again to generate a fresh signed preview URL.</p>
         <p style="color:#888;font-size:12px;">Redirect: ${location}</p>
       </div></body></html>`;
       return new Response(errorHtml, {
@@ -108,23 +174,26 @@ async function handleProxy(request: Request): Promise<Response> {
 
     // For HTML responses: rewrite resource URLs to go through our proxy
     if (contentTypeResp.includes('text/html')) {
-      let html = await upstream.text();
+      let html = upstream.body.toString('utf-8');
       
       // Extract the base URL from the target (e.g., http://3000-xxx.proxy.localhost:4000)
       const targetUrlObj = new URL(targetUrl);
       const proxyBase = `${targetUrlObj.protocol}//${targetUrlObj.host}`;
+      const tokenParam = previewToken ? `&token=${encodeURIComponent(previewToken)}` : '';
+      const proxyPath = (path: string) =>
+        `/api/sandbox-proxy?url=${encodeURIComponent(`${proxyBase}${path}`)}${tokenParam}`;
 
       // Rewrite absolute paths in HTML attributes to go through our proxy
       // src="/..." href="/..." action="/..."
       html = html.replace(
-        /((?:src|href|action)\s*=\s*["'])\/(?!\/)/g,
-        `$1/api/sandbox-proxy?url=${encodeURIComponent(proxyBase)}/`
+        /((?:src|href|action)\s*=\s*["'])\/(?!\/)([^"']*)/g,
+        (_match, prefix: string, path: string) => `${prefix}${proxyPath(`/${path}`)}`
       );
 
       // Also handle srcset attributes
       html = html.replace(
-        /(srcset\s*=\s*["'])\/(?!\/)/g,
-        `$1/api/sandbox-proxy?url=${encodeURIComponent(proxyBase)}/`
+        /(srcset\s*=\s*["'])\/(?!\/)([^"']*)/g,
+        (_match, prefix: string, path: string) => `${prefix}${proxyPath(`/${path}`)}`
       );
 
       // Inject a script to intercept dynamic resource loading (webpack chunks, fetch, etc.)
@@ -132,12 +201,16 @@ async function handleProxy(request: Request): Promise<Response> {
 <script>
 (function() {
   var PROXY_BASE = '/api/sandbox-proxy?url=${encodeURIComponent(proxyBase)}';
+  var PROXY_TOKEN = '${tokenParam}';
+  function proxyUrl(path) {
+    return PROXY_BASE + encodeURIComponent(path) + PROXY_TOKEN;
+  }
   
   // Override fetch to proxy API calls
   var originalFetch = window.fetch;
   window.fetch = function(input, init) {
     if (typeof input === 'string' && input.startsWith('/') && !input.startsWith('/api/sandbox-proxy')) {
-      input = PROXY_BASE + input;
+      input = proxyUrl(input);
     }
     return originalFetch.call(this, input, init);
   };
@@ -146,14 +219,14 @@ async function handleProxy(request: Request): Promise<Response> {
   var originalOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
     if (typeof url === 'string' && url.startsWith('/') && !url.startsWith('/api/sandbox-proxy')) {
-      url = PROXY_BASE + url;
+      url = proxyUrl(url);
     }
     return originalOpen.apply(this, [method, url, ...Array.prototype.slice.call(arguments, 2)]);
   };
 
   // For Next.js: override the asset prefix for dynamic chunk loading
   if (typeof __webpack_public_path__ !== 'undefined') {
-    __webpack_public_path__ = PROXY_BASE + '/_next/';
+    __webpack_public_path__ = proxyUrl('/_next/');
   }
   
   // Create a MutationObserver to rewrite dynamically added elements
@@ -164,7 +237,7 @@ async function handleProxy(request: Request): Promise<Response> {
           ['src', 'href'].forEach(function(attr) {
             var val = node.getAttribute && node.getAttribute(attr);
             if (val && val.startsWith('/') && !val.startsWith('/api/sandbox-proxy')) {
-              node.setAttribute(attr, PROXY_BASE + val);
+              node.setAttribute(attr, proxyUrl(val));
             }
           });
         }
@@ -195,7 +268,7 @@ async function handleProxy(request: Request): Promise<Response> {
 
     // For JS responses: rewrite absolute URL references
     if (contentTypeResp.includes('javascript') || contentTypeResp.includes('ecmascript')) {
-      let js = await upstream.text();
+      let js = upstream.body.toString('utf-8');
       const targetUrlObj = new URL(targetUrl);
       const proxyBase = `${targetUrlObj.protocol}//${targetUrlObj.host}`;
 
@@ -215,7 +288,7 @@ async function handleProxy(request: Request): Promise<Response> {
     }
 
     // For all other content types: stream through as-is
-    return new Response(upstream.body, {
+    return new Response(bufferToArrayBuffer(upstream.body), {
       status: upstream.status,
       headers: responseHeaders,
     });

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { buildSandboxPreviewUrl, isSandboxServerReady, normalizeSandboxFiles } from '@/lib/sandbox-files';
 
 export interface SandboxFile {
   path: string;
@@ -36,7 +37,7 @@ async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<T
 /** Fire-and-forget sandbox deletion — works even during page unload */
 function deleteSandboxFireAndForget(sandboxId: string) {
   const url = `/api/daytona/sandbox?sandboxId=${encodeURIComponent(sandboxId)}`;
-  fetch(url, { method: 'DELETE', keepalive: true }).catch(() => {});
+  fetch(url, { method: 'DELETE', keepalive: true }).catch(() => { });
 }
 
 export function useSandbox() {
@@ -90,7 +91,7 @@ export function useSandbox() {
         } catch {
           // Ignore cleanup errors
         }
-        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
       }
 
       setState((s) => ({ ...s, status: 'creating', error: null, logs: [], sandboxId: null, previewUrl: null }));
@@ -107,7 +108,7 @@ export function useSandbox() {
       setState((s) => ({ ...s, sandboxId: data.sandboxId, status: 'ready' }));
 
       // Persist for orphan cleanup on refresh
-      try { sessionStorage.setItem(SESSION_KEY, data.sandboxId); } catch {}
+      try { sessionStorage.setItem(SESSION_KEY, data.sandboxId); } catch { }
 
       return data.sandboxId;
     } catch (err) {
@@ -127,12 +128,18 @@ export function useSandbox() {
       const sandboxId = sandboxIdRef.current;
       if (!sandboxId) throw new Error('No sandbox');
 
+      const filesToSync = normalizeSandboxFiles(files);
+      const repairedFiles = filesToSync.filter((file, index) => file.content !== files[index]?.content);
+
       setState((s) => ({ ...s, status: 'syncing', error: null }));
-      addLog(`Syncing ${files.length} files...`);
+      addLog(`Syncing ${filesToSync.length} files...`);
+      if (repairedFiles.length > 0) {
+        addLog(`Repaired invalid config files: ${repairedFiles.map((file) => file.path).join(', ')}`);
+      }
       try {
         const res = await apiPost<{ status: string; fileCount: number; workDir: string }>(
           '/api/daytona/files',
-          { sandboxId, files, workDir: WORK_DIR }
+          { sandboxId, files: filesToSync, workDir: WORK_DIR }
         );
         addLog(`Synced ${res.fileCount} files to ${res.workDir}`);
         setState((s) => ({ ...s, status: 'ready' }));
@@ -183,15 +190,18 @@ export function useSandbox() {
         );
         clearTimeout(timeoutId);
 
-        const data = await res.json();
+        const data = await res.json() as { url?: string; token?: string | null; signed?: boolean; error?: string };
         if (!res.ok) {
           throw new Error(data.error || `Preview API error: ${res.status}`);
         }
 
-        // Route through our server-side reverse proxy which authenticates
-        // with the Daytona proxy using DAYTONA_PROXY_API_KEY (bypasses OIDC)
+        // Route through our same-origin proxy. The Daytona URL is signed, so
+        // the iframe and popout do not need to enter the Daytona OIDC flow.
         const directUrl = data.url;
-        const proxiedUrl = `/api/sandbox-proxy?url=${encodeURIComponent(directUrl)}`;
+        if (!directUrl) {
+          throw new Error('Preview API did not return a URL');
+        }
+        const proxiedUrl = buildSandboxPreviewUrl(directUrl, data.token);
 
         addLog(`Preview URL (direct): ${directUrl}`);
         addLog(`Preview URL (proxied): ${proxiedUrl}`);
@@ -232,13 +242,12 @@ export function useSandbox() {
           addLog('Waiting for server to start (first compile may take a moment)...');
           await new Promise((r) => setTimeout(r, 15000));
 
-          // Non-blocking health check — server may still be compiling first page
-          const checkRes = await exec('curl -s -o /dev/null -w "%{http_code}" http://0.0.0.0:3000 2>/dev/null || echo "not_ready"', WORK_DIR, 30);
+          const checkRes = await exec('for i in $(seq 1 24); do code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 2>/dev/null || echo "not_ready"); if echo "$code" | grep -Eq "^[1-9][0-9][0-9]$"; then echo "$code"; exit 0; fi; sleep 5; done; echo "$code"', WORK_DIR, 150);
           addLog(`Server check: ${checkRes.stdout.trim()}`);
 
-          if (checkRes.stdout.trim() !== '200') {
+          if (!isSandboxServerReady(checkRes.stdout)) {
             const logs = await exec('cat /tmp/nextdev.log 2>/dev/null | tail -20', WORK_DIR, 5);
-            addLog(`Server logs (may still be compiling): ${logs.stdout.trim() || 'empty'}`);
+            throw new Error(`Next.js server failed to start: ${logs.stdout.trim() || 'no logs'}`);
           }
 
           const url = await getPreviewUrl(3000);
@@ -313,7 +322,7 @@ export function useSandbox() {
     } catch {
       // Ignore errors on cleanup
     }
-    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { }
     setState({ sandboxId: null, status: 'idle', previewUrl: null, error: null, logs: [] });
   }, [addLog]);
 
@@ -323,7 +332,7 @@ export function useSandbox() {
       const sid = sandboxIdRef.current;
       if (sid) {
         deleteSandboxFireAndForget(sid);
-        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
       }
     };
   }, []);
@@ -334,7 +343,7 @@ export function useSandbox() {
       const sid = sandboxIdRef.current;
       if (sid) {
         deleteSandboxFireAndForget(sid);
-        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
