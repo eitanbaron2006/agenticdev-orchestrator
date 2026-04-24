@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { isNvidiaModelSelection } from '@/lib/ai-models';
+import { generateNvidiaChatCompletion } from '@/lib/nvidia-ai';
 import { getVertexAIClient, sanitizeVertexModelId } from '@/lib/vertex-ai';
 
 export const runtime = 'nodejs';
@@ -32,6 +34,17 @@ export async function POST(request: Request) {
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt is required.' }, { status: 400 });
+    }
+
+    if (isNvidiaModelSelection(body.model)) {
+      const result = await generateNvidiaChatCompletion({
+        model: body.model,
+        prompt,
+        systemInstruction: body.systemInstruction,
+        attachments: body.attachments,
+      });
+
+      return NextResponse.json(result);
     }
 
     const parts: Array<
@@ -78,7 +91,7 @@ export async function POST(request: Request) {
       model: sanitizeVertexModelId(body.model),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Vertex AI request failed.';
+    const message = error instanceof Error ? error.message : 'AI request failed.';
 
     return NextResponse.json({ error: message }, { status: 500 });
   }

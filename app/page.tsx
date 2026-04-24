@@ -76,6 +76,12 @@ import {
 import LandingPage from '@/components/LandingPage';
 import AuthScreen from '@/components/AuthScreen';
 import Terminal from '@/components/Terminal';
+import {
+  getAiModelProvider,
+  getAiModelProviderLabel,
+  type AiModelOption,
+  type AiModelProvider,
+} from '@/lib/ai-models';
 import { getSandboxPreviewPort, getSandboxRuntime, useSandbox, type SandboxFile } from '@/hooks/useSandbox';
 import { getSandboxPopoutUrl, shouldKeepSandboxOpenAfterStartError } from '@/lib/sandbox-files';
 
@@ -395,15 +401,6 @@ const PROJECT_TYPES: Record<string, ProjectTypeConfig> = {
     fileConvention: 'requirements.txt, app.py, routes/, models/, config.py, api-docs.html for preview'
   }
 };
-
-interface VertexModelOption {
-  id: string;
-  displayName: string;
-  description?: string;
-  supportedActions: string[];
-  inputTokenLimit?: number;
-  outputTokenLimit?: number;
-}
 
 const DEFAULT_AI_MODEL = 'gemini-2.5-flash';
 
@@ -1918,7 +1915,7 @@ export default function AgenticDevPage() {
   const [editProjectName, setEditProjectName] = useState('');
   const [editProjectDescription, setEditProjectDescription] = useState('');
   const [editAiModel, setEditAiModel] = useState(DEFAULT_AI_MODEL);
-  const [availableModels, setAvailableModels] = useState<VertexModelOption[]>([]);
+  const [availableModels, setAvailableModels] = useState<AiModelOption[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -1968,6 +1965,8 @@ export default function AgenticDevPage() {
     if (fallbackModelId && !options.some((option) => option.id === fallbackModelId)) {
       options.unshift({
         id: fallbackModelId,
+        provider: getAiModelProvider(fallbackModelId),
+        providerModelId: fallbackModelId,
         displayName: fallbackModelId,
         supportedActions: [],
       });
@@ -1979,6 +1978,16 @@ export default function AgenticDevPage() {
   const selectedModelOption = useMemo(
     () => effectiveModelOptions.find((option) => option.id === editAiModel),
     [effectiveModelOptions, editAiModel]
+  );
+  const modelOptionsByProvider = useMemo(
+    () => effectiveModelOptions.reduce<Record<AiModelProvider, AiModelOption[]>>(
+      (groups, model) => {
+        groups[model.provider].push(model);
+        return groups;
+      },
+      { vertex: [], nvidia: [] }
+    ),
+    [effectiveModelOptions]
   );
 
   const isSettingsDirty = Boolean(
@@ -2060,7 +2069,7 @@ export default function AgenticDevPage() {
     startSandboxDevServer,
   ]);
 
-  const loadVertexModels = useCallback(async () => {
+  const loadAiModels = useCallback(async () => {
     setIsLoadingModels(true);
     setModelsError(null);
 
@@ -2071,16 +2080,20 @@ export default function AgenticDevPage() {
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error || 'Failed to load Vertex AI models.');
+        throw new Error(payload.error || 'Failed to load AI models.');
       }
 
-      const models = Array.isArray(payload.models) ? payload.models as VertexModelOption[] : [];
+      const models = Array.isArray(payload.models) ? payload.models as AiModelOption[] : [];
       const recommendedModel = typeof payload.recommendedModel === 'string' ? payload.recommendedModel : DEFAULT_AI_MODEL;
+      const warnings = Array.isArray(payload.errors) ? payload.errors.filter(Boolean).join(' ') : '';
 
       setAvailableModels(models);
       setEditAiModel((currentValue) => currentValue || recommendedModel);
+      if (warnings) {
+        setModelsError(warnings);
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load Vertex AI models.';
+      const message = error instanceof Error ? error.message : 'Failed to load AI models.';
 
       setModelsError(message);
       setAvailableModels([]);
@@ -2116,7 +2129,7 @@ export default function AgenticDevPage() {
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || 'Vertex AI request failed.');
+      throw new Error(payload.error || 'AI request failed.');
     }
 
     return typeof payload.text === 'string' ? payload.text : '';
@@ -3018,9 +3031,9 @@ ${context}`;
 
   useEffect(() => {
     if (isSettingsModalOpen && availableModels.length === 0 && !isLoadingModels) {
-      void loadVertexModels();
+      void loadAiModels();
     }
-  }, [availableModels.length, isLoadingModels, isSettingsModalOpen, loadVertexModels]);
+  }, [availableModels.length, isLoadingModels, isSettingsModalOpen, loadAiModels]);
 
   const handleNewProjectClick = () => {
     if (!user) return loginWithGoogle();
@@ -3189,7 +3202,7 @@ ${context}`;
     setEditAiModel(currentProject.aiModel || DEFAULT_AI_MODEL);
     setIsSettingsModalOpen(true);
     setIsDeleteConfirmOpen(false);
-    void loadVertexModels();
+    void loadAiModels();
   };
 
   const handleUpdateProject = async (e: React.FormEvent) => {
@@ -4866,7 +4879,7 @@ ${context}`;
                         <label className="block text-[10px] font-mono uppercase tracking-widest opacity-50">AI Model</label>
                         <button
                           type="button"
-                          onClick={() => void loadVertexModels()}
+                          onClick={() => void loadAiModels()}
                           disabled={isLoadingModels}
                           className="text-[10px] font-mono text-accent hover:underline disabled:opacity-50 disabled:no-underline"
                         >
@@ -4882,11 +4895,17 @@ ${context}`;
                         {effectiveModelOptions.length === 0 ? (
                           <option value={editAiModel || DEFAULT_AI_MODEL}>{editAiModel || DEFAULT_AI_MODEL}</option>
                         ) : (
-                          effectiveModelOptions.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.displayName}
-                            </option>
-                          ))
+                          (Object.entries(modelOptionsByProvider) as Array<[AiModelProvider, AiModelOption[]]>)
+                            .filter(([, models]) => models.length > 0)
+                            .map(([provider, models]) => (
+                              <optgroup key={provider} label={getAiModelProviderLabel(provider)}>
+                                {models.map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.displayName}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))
                         )}
                       </select>
                       {selectedModelOption?.description && (

@@ -1,5 +1,6 @@
 import { GoogleGenAI, type GoogleGenAIOptions, type Model } from '@google/genai';
 import { createVertexAIGoogleAuthOptions, getVertexLocation, getVertexProjectId } from '@/lib/vertex-ai-auth';
+import type { AiModelOption } from '@/lib/ai-models';
 
 export const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
 
@@ -16,15 +17,6 @@ const NON_TEXT_MODEL_MARKERS = ['image', 'audio', 'live', 'tts'];
 const globalForVertexAI = globalThis as unknown as {
   __vertexAIClient?: GoogleGenAI;
 };
-
-export interface VertexModelOption {
-  id: string;
-  displayName: string;
-  description?: string;
-  supportedActions: string[];
-  inputTokenLimit?: number;
-  outputTokenLimit?: number;
-}
 
 const normalizeModelId = (modelName?: string): string => {
   if (!modelName) {
@@ -83,7 +75,7 @@ export const getVertexAIClient = (): GoogleGenAI => {
   return globalForVertexAI.__vertexAIClient;
 };
 
-export const listVertexTextModels = async (): Promise<VertexModelOption[]> => {
+export const listVertexTextModels = async (): Promise<AiModelOption[]> => {
   const pager = await getVertexAIClient().models.list({
     config: {
       pageSize: 100,
@@ -91,7 +83,7 @@ export const listVertexTextModels = async (): Promise<VertexModelOption[]> => {
     },
   });
 
-  const options = new Map<string, VertexModelOption>();
+  const options = new Map<string, AiModelOption>();
 
   for await (const model of pager) {
     if (!supportsTextGeneration(model)) {
@@ -106,6 +98,8 @@ export const listVertexTextModels = async (): Promise<VertexModelOption[]> => {
 
     options.set(id, {
       id,
+      provider: 'vertex',
+      providerModelId: id,
       displayName: model.displayName || id,
       description: model.description,
       supportedActions: model.supportedActions || [],
@@ -117,7 +111,7 @@ export const listVertexTextModels = async (): Promise<VertexModelOption[]> => {
   return [...options.values()].sort((left, right) => compareModelPriority(left.id, right.id));
 };
 
-export const pickPreferredVertexModel = (models: VertexModelOption[]): string =>
+export const pickPreferredVertexModel = (models: AiModelOption[]): string =>
   models.find((model) => PREFERRED_MODEL_ORDER.includes(model.id))?.id || models[0]?.id || DEFAULT_VERTEX_MODEL;
 
 export const sanitizeVertexModelId = (model?: string): string => {
