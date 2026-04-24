@@ -76,7 +76,7 @@ import {
 import LandingPage from '@/components/LandingPage';
 import AuthScreen from '@/components/AuthScreen';
 import Terminal from '@/components/Terminal';
-import { getSandboxPreviewPort, useSandbox, type SandboxFile } from '@/hooks/useSandbox';
+import { getSandboxPreviewPort, getSandboxRuntime, useSandbox, type SandboxFile } from '@/hooks/useSandbox';
 import { getSandboxPopoutUrl, shouldKeepSandboxOpenAfterStartError } from '@/lib/sandbox-files';
 
 // --- Utils ---
@@ -1856,6 +1856,7 @@ export default function AgenticDevPage() {
   const autoPreviewRunKeyRef = useRef<string | null>(null);
   const sandboxStatus = sandbox.status;
   const ensureReusableSandbox = sandbox.ensureSandbox;
+  const prewarmSandboxes = sandbox.prewarmSandboxes;
   const startSandboxDevServer = sandbox.startDevServer;
   const stopSandboxPreviewServer = sandbox.stopPreviewServer;
 
@@ -1933,10 +1934,11 @@ export default function AgenticDevPage() {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
   const currentProjectAiModel = currentProject?.aiModel || DEFAULT_AI_MODEL;
+  const currentSandboxRuntime = getSandboxRuntime(currentProject?.projectType || 'static-site');
   const sandboxPreviewPanelCount = Number(isSandboxTerminalExpanded) + Number(isSandboxConsoleExpanded);
   const sandboxPreviewGridColumns = sandboxPreviewPanelCount === 1 ? 'grid-cols-1' : 'grid-cols-2';
   const hasHiddenSandboxPreviewPanels = !isSandboxTerminalExpanded || !isSandboxConsoleExpanded;
-  const isSandboxBusy = ['creating', 'restoring', 'preparing', 'syncing', 'installing', 'starting', 'stopping'].includes(sandboxStatus);
+  const isSandboxBusy = Boolean(currentSandboxRuntime && ['creating', 'restoring', 'preparing', 'syncing', 'installing', 'starting', 'stopping'].includes(sandboxStatus));
   const filesReadyForCurrentProject = Boolean(currentProject?.id && filesLoadedProjectId === currentProject.id);
   const currentPreviewSourceKey = useMemo(() => {
     if (!currentProject?.id || !filesReadyForCurrentProject) return '';
@@ -2013,7 +2015,18 @@ export default function AgenticDevPage() {
     let reusableSandboxReady = false;
     try {
       const projectType = currentProject.projectType || 'static-site';
-      await ensureReusableSandbox();
+      const sandboxRuntime = getSandboxRuntime(projectType);
+      if (!sandboxRuntime) {
+        setIsSandboxPreview(false);
+        setSandboxServerStarted(false);
+        setPreviewKey((prev) => prev + 1);
+        if (mode === 'manual') {
+          showToast('Local preview refreshed', 'success');
+        }
+        return;
+      }
+
+      await ensureReusableSandbox(sandboxRuntime);
       reusableSandboxReady = true;
 
       setIsSandboxPreview(true);
@@ -2021,6 +2034,7 @@ export default function AgenticDevPage() {
       setConsoleLogs([]);
 
       await startSandboxDevServer(projectType, sandboxFiles);
+      autoPreviewRunKeyRef.current = currentPreviewSourceKey;
       setSandboxServerStarted(true);
       setPreviewKey((prev) => prev + 1);
       showToast(mode === 'auto' ? 'Preview updated' : 'Preview ready!', 'success');
@@ -2038,6 +2052,7 @@ export default function AgenticDevPage() {
     }
   }, [
     currentProject,
+    currentPreviewSourceKey,
     ensureReusableSandbox,
     files,
     filesReadyForCurrentProject,
@@ -2617,9 +2632,29 @@ ${context}`;
       setSandboxServerStarted(false);
       setFiles([]);
       setFilesLoadedProjectId(null);
-      autoPreviewRunKeyRef.current = null;
     }
   }, [currentProject?.id]);
+
+  useEffect(() => {
+    if (currentSandboxRuntime) return;
+    setIsSandboxPreview(false);
+    setSandboxServerStarted(false);
+  }, [currentSandboxRuntime]);
+
+  useEffect(() => {
+    const canRestoreSandboxPreview = Boolean(
+      sandbox.previewUrl &&
+      currentPreviewSourceKey &&
+      autoPreviewRunKeyRef.current === currentPreviewSourceKey
+    );
+
+    if (activeTab !== 'preview' || !currentSandboxRuntime || !canRestoreSandboxPreview) {
+      return;
+    }
+
+    setIsSandboxPreview(true);
+    setSandboxServerStarted(true);
+  }, [activeTab, currentPreviewSourceKey, currentSandboxRuntime, sandbox.previewUrl]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -2651,15 +2686,15 @@ ${context}`;
   }, []);
 
   useEffect(() => {
-    if (view !== 'app' || !user?.uid || sandboxStatus !== 'idle') return;
+    if (view !== 'app' || !user?.uid) return;
     if (prewarmedSandboxUserRef.current === user.uid) return;
 
     prewarmedSandboxUserRef.current = user.uid;
-    ensureReusableSandbox().catch((err) => {
+    prewarmSandboxes().catch((err) => {
       prewarmedSandboxUserRef.current = null;
       console.warn('[Sandbox] Prewarm failed:', err);
     });
-  }, [ensureReusableSandbox, sandboxStatus, user?.uid, view]);
+  }, [prewarmSandboxes, user?.uid, view]);
 
   // Auth Listener
   useEffect(() => {
@@ -2930,6 +2965,7 @@ ${context}`;
     if (
       activeTab !== 'preview' ||
       !currentProject?.id ||
+      !currentSandboxRuntime ||
       !filesReadyForCurrentProject ||
       !currentPreviewSourceKey ||
       isSandboxBusy
@@ -2953,6 +2989,7 @@ ${context}`;
   }, [
     activeTab,
     currentProject?.id,
+    currentSandboxRuntime,
     currentPreviewSourceKey,
     filesReadyForCurrentProject,
     isSandboxBusy,
@@ -3932,7 +3969,7 @@ ${context}`;
                       return 'Preview';
                     })()}
                   </div>
-                  {sandbox.status !== 'idle' && sandbox.status !== 'error' && (
+                  {currentSandboxRuntime && sandbox.status !== 'idle' && sandbox.status !== 'error' && (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/10 border border-green-500/20 rounded text-[9px] font-mono text-green-400">
                       <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                       SANDBOX {sandbox.status.toUpperCase()}
@@ -3940,55 +3977,57 @@ ${context}`;
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {!isSandboxPreview ? (
-                    <button
-                      onClick={() => {
-                        autoPreviewRunKeyRef.current = null;
-                        startSandboxPreview('manual');
-                      }}
-                      disabled={isSandboxBusy}
-                      className="p-1.5 rounded bg-accent/10 hover:bg-accent/20 text-accent transition-colors flex items-center gap-1.5 disabled:opacity-50 border border-accent/20"
-                      title="Start Live Preview"
-                    >
-                      {isSandboxBusy ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Play className="w-3 h-3" />
-                      )}
-                      <span className="text-[9px] font-mono font-bold uppercase">
-                        {sandbox.status === 'creating' ? 'Creating...' :
-                         sandbox.status === 'restoring' ? 'Restoring...' :
-                         sandbox.status === 'preparing' ? 'Preparing...' :
-                         sandbox.status === 'syncing' ? 'Syncing...' :
-                         sandbox.status === 'installing' ? 'Installing...' :
-                         sandbox.status === 'starting' ? 'Starting...' :
-                         sandbox.status === 'stopping' ? 'Stopping...' :
-                         sandbox.sandboxId ? 'Start Preview' :
-                         'Start Sandbox'}
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await stopSandboxPreviewServer();
-                          setIsSandboxPreview(false);
-                          setSandboxServerStarted(false);
-                          showToast('Preview stopped; sandbox kept warm', 'info');
-                        } catch (err) {
-                          showToast(err instanceof Error ? err.message : 'Failed to stop preview', 'error');
-                        }
-                      }}
-                      className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors flex items-center gap-1.5 border border-red-500/20"
-                      title="Stop Preview"
-                    >
-                      <X className="w-3 h-3" />
-                      <span className="text-[9px] font-mono font-bold uppercase">Stop</span>
-                    </button>
+                  {currentSandboxRuntime && (
+                    !isSandboxPreview ? (
+                      <button
+                        onClick={() => {
+                          autoPreviewRunKeyRef.current = null;
+                          startSandboxPreview('manual');
+                        }}
+                        disabled={isSandboxBusy}
+                        className="p-1.5 rounded bg-accent/10 hover:bg-accent/20 text-accent transition-colors flex items-center gap-1.5 disabled:opacity-50 border border-accent/20"
+                        title="Start Live Preview"
+                      >
+                        {isSandboxBusy ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Play className="w-3 h-3" />
+                        )}
+                        <span className="text-[9px] font-mono font-bold uppercase">
+                          {sandbox.status === 'creating' ? 'Creating...' :
+                           sandbox.status === 'restoring' ? 'Restoring...' :
+                           sandbox.status === 'preparing' ? 'Preparing...' :
+                           sandbox.status === 'syncing' ? 'Syncing...' :
+                           sandbox.status === 'installing' ? 'Installing...' :
+                           sandbox.status === 'starting' ? 'Starting...' :
+                           sandbox.status === 'stopping' ? 'Stopping...' :
+                           sandbox.sandboxId ? 'Start Preview' :
+                           'Start Sandbox'}
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await stopSandboxPreviewServer();
+                            setIsSandboxPreview(false);
+                            setSandboxServerStarted(false);
+                            showToast('Preview stopped; sandbox kept warm', 'info');
+                          } catch (err) {
+                            showToast(err instanceof Error ? err.message : 'Failed to stop preview', 'error');
+                          }
+                        }}
+                        className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors flex items-center gap-1.5 border border-red-500/20"
+                        title="Stop Preview"
+                      >
+                        <X className="w-3 h-3" />
+                        <span className="text-[9px] font-mono font-bold uppercase">Stop</span>
+                      </button>
+                    )
                   )}
                   <button
                     onClick={async () => {
-                      if (isSandboxPreview && sandbox.sandboxId) {
+                      if (isSandboxPreview && sandbox.sandboxId && currentSandboxRuntime) {
                         setIsRefreshingPreview(true);
                         const sandboxFiles: SandboxFile[] = files.map((f) => ({
                           path: f.path,
@@ -4042,7 +4081,7 @@ ${context}`;
               </div>
 
               {/* Sandbox Error */}
-              {sandbox.error && (
+              {currentSandboxRuntime && sandbox.error && (
                 <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-[10px] font-mono flex items-center gap-2">
                   <X className="w-3 h-3" />
                   {sandbox.error}

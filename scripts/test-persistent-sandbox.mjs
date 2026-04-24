@@ -15,18 +15,23 @@ assert.match(
 );
 assert.match(
   hookSource,
-  /export type SandboxRuntime = 'static' \| 'next' \| 'api'/,
-  'useSandbox should group reusable sandboxes by a small runtime pool'
+  /export type SandboxRuntime = 'next' \| 'node-api' \| 'python-api'/,
+  'useSandbox should group reusable sandboxes by a small non-static runtime pool'
 );
 assert.match(
   hookSource,
-  /const RUNTIME_PREWARM_ORDER: SandboxRuntime\[\] = \['static', 'next', 'api'\]/,
-  'useSandbox should prewarm at most three runtime sandboxes per user'
+  /const RUNTIME_PREWARM_ORDER: SandboxRuntime\[\] = \['next', 'node-api', 'python-api'\]/,
+  'useSandbox should prewarm at most three non-static runtime sandboxes per user'
 );
 assert.match(
   hookSource,
-  /export function getSandboxRuntime\(projectType\?: string \| null\): SandboxRuntime/,
-  'project types should map to a reusable runtime sandbox'
+  /export function getSandboxRuntime\(projectType\?: string \| null\): SandboxRuntime \| null/,
+  'project types should map to a reusable runtime sandbox only when a sandbox is required'
+);
+assert.match(
+  hookSource,
+  /return null;/,
+  'static and CDN-only projects should not require a sandbox runtime'
 );
 assert.match(
   hookSource,
@@ -176,8 +181,13 @@ assert.match(
 );
 assert.match(
   pageSource,
-  /getSandboxRuntime\(projectType\)/,
+  /const sandboxRuntime = getSandboxRuntime\(projectType\)/,
   'the preview start flow should ensure/reuse the runtime sandbox instead of creating a fresh one'
+);
+assert.match(
+  pageSource,
+  /if \(!sandboxRuntime\)[\s\S]*setIsSandboxPreview\(false\)[\s\S]*setPreviewKey\(\(prev\) => prev \+ 1\)/,
+  'static previews should refresh locally instead of creating or using a sandbox'
 );
 assert.match(
   pageSource,
@@ -197,7 +207,17 @@ assert.match(
 assert.match(
   pageSource,
   /prewarmSandboxes\(\)/,
-  'the app should prewarm the runtime sandbox pool after login'
+  'the app should prewarm the non-static runtime sandbox pool after login'
+);
+assert.match(
+  pageSource,
+  /currentSandboxRuntime/,
+  'the preview UI should distinguish sandbox-backed projects from local static previews'
+);
+assert.match(
+  pageSource,
+  /currentSandboxRuntime && \(/,
+  'the preview UI should only show sandbox start/stop controls for sandbox-backed projects'
 );
 assert.match(
   pageSource,
@@ -208,6 +228,16 @@ assert.match(
   pageSource,
   /autoPreviewRunKeyRef/,
   'the app should avoid repeatedly auto-starting the same preview input'
+);
+assert.match(
+  pageSource,
+  /await startSandboxDevServer\(projectType, sandboxFiles\);\s*autoPreviewRunKeyRef\.current = currentPreviewSourceKey;/,
+  'a successful sandbox start should remember the exact project/files already running'
+);
+assert.match(
+  pageSource,
+  /sandbox\.previewUrl &&\s*currentPreviewSourceKey &&\s*autoPreviewRunKeyRef\.current === currentPreviewSourceKey[\s\S]*setIsSandboxPreview\(true\)[\s\S]*setSandboxServerStarted\(true\)/,
+  'returning to the same sandbox-backed project should restore the existing preview instead of restarting it'
 );
 assert.match(
   pageSource,
@@ -224,10 +254,17 @@ assert.match(
   /startSandboxPreview\('auto'\)/,
   'entering Preview should automatically start or refresh the sandbox app'
 );
-assert.match(
-  pageSource,
+
+const projectSwitchEffectIndex = pageSource.indexOf('useEffect(() => {\n    if (currentProject?.id) {');
+assert.notEqual(projectSwitchEffectIndex, -1, 'project switch reset effect should exist');
+const projectSwitchEffectSource = pageSource.slice(
+  projectSwitchEffectIndex,
+  pageSource.indexOf('  useEffect(() => {\n    if (currentSandboxRuntime)', projectSwitchEffectIndex)
+);
+assert.doesNotMatch(
+  projectSwitchEffectSource,
   /autoPreviewRunKeyRef\.current = null/,
-  'switching projects should allow the new project to start automatically'
+  'switching through a static project should not forget an unchanged running sandbox preview'
 );
 assert.doesNotMatch(
   pageSource,

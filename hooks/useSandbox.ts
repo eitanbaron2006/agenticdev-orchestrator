@@ -12,12 +12,38 @@ export interface ExecResult {
   stderr: string;
 }
 
+export type SandboxRuntime = 'next' | 'node-api' | 'python-api';
+
+type SandboxStatus =
+  | 'idle'
+  | 'creating'
+  | 'restoring'
+  | 'preparing'
+  | 'syncing'
+  | 'installing'
+  | 'starting'
+  | 'stopping'
+  | 'ready'
+  | 'error';
+
+interface SandboxPoolState {
+  sandboxId: string | null;
+  bootstrapped: boolean;
+}
+
 export interface SandboxState {
   sandboxId: string | null;
-  status: 'idle' | 'creating' | 'restoring' | 'preparing' | 'syncing' | 'installing' | 'starting' | 'stopping' | 'ready' | 'error';
+  activeRuntime: SandboxRuntime;
+  status: SandboxStatus;
   previewUrl: string | null;
   error: string | null;
   logs: string[];
+  pool: Record<SandboxRuntime, SandboxPoolState>;
+}
+
+interface EnsureSandboxOptions {
+  silent?: boolean;
+  bootstrap?: boolean;
 }
 
 const WORK_DIR = '/home/daytona/project';
@@ -36,6 +62,17 @@ const MANAGED_PREVIEW_PORTS = [
 ];
 const KILL_PREVIEW_PORTS = [3000, ...MANAGED_PREVIEW_PORTS];
 const VERIFY_PREVIEW_PORTS = MANAGED_PREVIEW_PORTS;
+const RUNTIME_PREWARM_ORDER: SandboxRuntime[] = ['next', 'node-api', 'python-api'];
+
+type SandboxIdPool = Record<SandboxRuntime, string | null>;
+type BootstrapPool = Record<SandboxRuntime, boolean>;
+
+export function getSandboxRuntime(projectType?: string | null): SandboxRuntime | null {
+  if (projectType === 'nextjs') return 'next';
+  if (projectType === 'express-api') return 'node-api';
+  if (projectType === 'flask-api') return 'python-api';
+  return null;
+}
 
 export function getSandboxPreviewPort(projectType?: string | null): number {
   if (projectType === 'nextjs') return NEXTJS_PREVIEW_PORT;
@@ -44,7 +81,29 @@ export function getSandboxPreviewPort(projectType?: string | null): number {
   return STATIC_SITE_PREVIEW_PORT;
 }
 
-const getSessionKey = (scope: string) => `${SESSION_KEY_PREFIX}:${scope}`;
+const getSessionKey = (scope: string, runtime: SandboxRuntime) => `${SESSION_KEY_PREFIX}:${scope}:${runtime}`;
+
+function createEmptySandboxPool(): SandboxIdPool {
+  return { next: null, 'node-api': null, 'python-api': null };
+}
+
+function createEmptyBootstrapPool(): BootstrapPool {
+  return { next: false, 'node-api': false, 'python-api': false };
+}
+
+function buildPoolState(ids: SandboxIdPool, bootstrapped: BootstrapPool): Record<SandboxRuntime, SandboxPoolState> {
+  return {
+    next: { sandboxId: ids.next, bootstrapped: bootstrapped.next },
+    'node-api': { sandboxId: ids['node-api'], bootstrapped: bootstrapped['node-api'] },
+    'python-api': { sandboxId: ids['python-api'], bootstrapped: bootstrapped['python-api'] },
+  };
+}
+
+function runtimeLabel(runtime: SandboxRuntime): string {
+  if (runtime === 'next') return 'Next.js';
+  if (runtime === 'node-api') return 'Node API';
+  return 'Python API';
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -99,48 +158,92 @@ async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<T
 export function useSandbox(ownerKey?: string | null) {
   const [state, setState] = useState<SandboxState>({
     sandboxId: null,
+    activeRuntime: 'next',
     status: 'idle',
     previewUrl: null,
     error: null,
     logs: [],
+    pool: buildPoolState(createEmptySandboxPool(), createEmptyBootstrapPool()),
   });
 
   const sandboxScope = useMemo(() => ownerKey?.trim() || 'anonymous', [ownerKey]);
-  const sessionKey = useMemo(() => getSessionKey(sandboxScope), [sandboxScope]);
 
-  // Direct mutable ref for sandboxId - updated immediately, no React batching.
-  const sandboxIdRef = useRef<string | null>(null);
-  const ensureSandboxPromiseRef = useRef<Promise<string> | null>(null);
+  const sandboxPoolRef = useRef<SandboxIdPool>(createEmptySandboxPool());
+  const bootstrappedRuntimeRef = useRef<BootstrapPool>(createEmptyBootstrapPool());
+  const activeRuntimeRef = useRef<SandboxRuntime>('next');
+  const ensureSandboxPromiseRef = useRef<Partial<Record<SandboxRuntime, Promise<string>>>>({});
+  const bootstrapSandboxPromiseRef = useRef<Partial<Record<SandboxRuntime, Promise<void>>>>({});
+  const prewarmPromiseRef = useRef<Promise<void> | null>(null);
   const previewOperationRef = useRef(false);
 
-  const addLog = useCallback((msg: string) => {
+  const updatePoolState = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      sandboxId: sandboxPoolRef.current[activeRuntimeRef.current],
+      activeRuntime: activeRuntimeRef.current,
+      pool: buildPoolState(sandboxPoolRef.current, bootstrappedRuntimeRef.current),
+    }));
+  }, []);
+
+  const setRuntimeStatus = useCallback((runtime: SandboxRuntime, patch: Partial<SandboxState>) => {
+    if (activeRuntimeRef.current !== runtime) {
+      setState((s) => ({
+        ...s,
+        pool: buildPoolState(sandboxPoolRef.current, bootstrappedRuntimeRef.current),
+      }));
+      return;
+    }
+
+    setState((s) => ({
+      ...s,
+      ...patch,
+      sandboxId: sandboxPoolRef.current[runtime],
+      activeRuntime: runtime,
+      pool: buildPoolState(sandboxPoolRef.current, bootstrappedRuntimeRef.current),
+    }));
+  }, []);
+
+  const activateRuntime = useCallback((runtime: SandboxRuntime) => {
+    activeRuntimeRef.current = runtime;
+    setState((s) => ({
+      ...s,
+      sandboxId: sandboxPoolRef.current[runtime],
+      activeRuntime: runtime,
+      previewUrl: runtime === s.activeRuntime ? s.previewUrl : null,
+      error: null,
+      pool: buildPoolState(sandboxPoolRef.current, bootstrappedRuntimeRef.current),
+    }));
+  }, []);
+
+  const addLog = useCallback((msg: string, silent = false) => {
     console.log(`[Sandbox] ${msg}`);
+    if (silent) return;
     setState((s) => ({ ...s, logs: [...s.logs, msg].slice(-250) }));
   }, []);
 
-  const readStoredSandboxId = useCallback(() => {
+  const readStoredSandboxId = useCallback((runtime: SandboxRuntime) => {
     try {
-      return sessionStorage.getItem(sessionKey);
+      return sessionStorage.getItem(getSessionKey(sandboxScope, runtime));
     } catch {
       return null;
     }
-  }, [sessionKey]);
+  }, [sandboxScope]);
 
-  const storeSandboxId = useCallback((sandboxId: string) => {
+  const storeSandboxId = useCallback((runtime: SandboxRuntime, sandboxId: string) => {
     try {
-      sessionStorage.setItem(sessionKey, sandboxId);
+      sessionStorage.setItem(getSessionKey(sandboxScope, runtime), sandboxId);
     } catch {
       // sessionStorage not available
     }
-  }, [sessionKey]);
+  }, [sandboxScope]);
 
-  const clearStoredSandboxId = useCallback(() => {
+  const clearStoredSandboxId = useCallback((runtime: SandboxRuntime) => {
     try {
-      sessionStorage.removeItem(sessionKey);
+      sessionStorage.removeItem(getSessionKey(sandboxScope, runtime));
     } catch {
       // sessionStorage not available
     }
-  }, [sessionKey]);
+  }, [sandboxScope]);
 
   const validateSandbox = useCallback(async (sandboxId: string) => {
     try {
@@ -156,109 +259,280 @@ export function useSandbox(ownerKey?: string | null) {
     }
   }, []);
 
-  useEffect(() => {
-    ensureSandboxPromiseRef.current = null;
-    sandboxIdRef.current = null;
-
-    const storedSandboxId = readStoredSandboxId();
-    if (storedSandboxId) {
-      sandboxIdRef.current = storedSandboxId;
-      setState({
-        sandboxId: storedSandboxId,
-        status: 'ready',
-        previewUrl: null,
-        error: null,
-        logs: [`Restored reusable sandbox: ${storedSandboxId}`],
+  const execInSandbox = useCallback(
+    async (
+      sandboxId: string,
+      command: string,
+      cwd?: string,
+      timeout?: number,
+      silent = false
+    ): Promise<ExecResult> => {
+      addLog(`$ ${command}`, silent);
+      const result = await apiPost<ExecResult>('/api/daytona/exec', {
+        sandboxId,
+        command,
+        cwd: cwd || WORK_DIR,
+        timeout: timeout || 120,
       });
-      return;
+      if (result.stdout) addLog(result.stdout.trim(), silent);
+      if (result.stderr) addLog(`stderr: ${result.stderr.trim()}`, silent);
+      if (result.exitCode !== 0) addLog(`Exit code: ${result.exitCode}`, silent);
+      return result;
+    },
+    [addLog]
+  );
+
+  const execOnRuntime = useCallback(
+    async (
+      runtime: SandboxRuntime,
+      command: string,
+      cwd?: string,
+      timeout?: number,
+      silent = false
+    ): Promise<ExecResult> => {
+      const sandboxId = sandboxPoolRef.current[runtime];
+      if (!sandboxId) throw new Error(`No ${runtimeLabel(runtime)} sandbox`);
+      return execInSandbox(sandboxId, command, cwd, timeout, silent);
+    },
+    [execInSandbox]
+  );
+
+  const bootstrapSandboxRuntime = useCallback(
+    async (runtime: SandboxRuntime, sandboxId: string, silent = false) => {
+      if (bootstrappedRuntimeRef.current[runtime]) return;
+      if (bootstrapSandboxPromiseRef.current[runtime]) {
+        return bootstrapSandboxPromiseRef.current[runtime];
+      }
+
+      const promise = (async () => {
+        if (!silent) {
+          setRuntimeStatus(runtime, { status: 'preparing', error: null });
+          addLog(`Bootstrapping ${runtimeLabel(runtime)} sandbox...`);
+        } else {
+          addLog(`Prewarming ${runtimeLabel(runtime)} sandbox...`, true);
+        }
+
+        const nextCacheDir = '/home/daytona/.cache/agenticdev-next';
+        const nodeApiCacheDir = '/home/daytona/.cache/agenticdev-node-api';
+        const pythonApiCacheDir = '/home/daytona/.cache/agenticdev-python-api';
+        let bootstrapCommand = `mkdir -p ${WORK_DIR}`;
+        let timeout = 60;
+
+        if (runtime === 'next') {
+          bootstrapCommand = [
+            `mkdir -p ${WORK_DIR} ${nextCacheDir}`,
+            `cd ${nextCacheDir}`,
+            'if [ ! -f package.json ]; then npm init -y >/dev/null 2>&1; fi',
+            'npm install --prefer-offline --no-audit --no-fund next react react-dom typescript tailwindcss postcss autoprefixer',
+          ].join('\n');
+          timeout = 600;
+        } else if (runtime === 'node-api') {
+          bootstrapCommand = [
+            `mkdir -p ${WORK_DIR} ${nodeApiCacheDir}`,
+            `cd ${nodeApiCacheDir}`,
+            'if [ ! -f package.json ]; then npm init -y >/dev/null 2>&1; fi',
+            'npm install --prefer-offline --no-audit --no-fund express cors dotenv',
+          ].join('\n');
+          timeout = 600;
+        } else {
+          bootstrapCommand = [
+            `mkdir -p ${WORK_DIR} ${pythonApiCacheDir}`,
+            `cd ${pythonApiCacheDir}`,
+            'python3 -m pip install --user flask flask-cors python-dotenv >/dev/null 2>&1 || python -m pip install --user flask flask-cors python-dotenv >/dev/null 2>&1 || true',
+          ].join('\n');
+          timeout = 600;
+        }
+
+        const result = await execInSandbox(sandboxId, bootstrapCommand, '/', timeout, silent);
+        if (result.exitCode !== 0) {
+          throw new Error(`Failed to bootstrap ${runtimeLabel(runtime)} sandbox: ${result.stderr || result.stdout}`);
+        }
+
+        bootstrappedRuntimeRef.current[runtime] = true;
+        updatePoolState();
+        addLog(`${runtimeLabel(runtime)} sandbox ready for previews`, silent);
+      })();
+
+      bootstrapSandboxPromiseRef.current[runtime] = promise;
+      try {
+        await promise;
+      } finally {
+        delete bootstrapSandboxPromiseRef.current[runtime];
+      }
+    },
+    [addLog, execInSandbox, setRuntimeStatus, updatePoolState]
+  );
+
+  useEffect(() => {
+    ensureSandboxPromiseRef.current = {};
+    bootstrapSandboxPromiseRef.current = {};
+    prewarmPromiseRef.current = null;
+    sandboxPoolRef.current = createEmptySandboxPool();
+    bootstrappedRuntimeRef.current = createEmptyBootstrapPool();
+    activeRuntimeRef.current = 'next';
+
+    const restoredPool = createEmptySandboxPool();
+    for (const runtime of RUNTIME_PREWARM_ORDER) {
+      restoredPool[runtime] = readStoredSandboxId(runtime);
     }
 
+    sandboxPoolRef.current = restoredPool;
+    const restoredRuntime = RUNTIME_PREWARM_ORDER.find((runtime) => restoredPool[runtime]) || 'next';
+    activeRuntimeRef.current = restoredRuntime;
+    const restoredSandboxId = restoredPool[restoredRuntime];
+
     setState({
-      sandboxId: null,
-      status: 'idle',
+      sandboxId: restoredSandboxId,
+      activeRuntime: restoredRuntime,
+      status: restoredSandboxId ? 'ready' : 'idle',
       previewUrl: null,
       error: null,
-      logs: [],
+      logs: restoredSandboxId ? [`Restored reusable sandbox: ${restoredSandboxId}`] : [],
+      pool: buildPoolState(restoredPool, bootstrappedRuntimeRef.current),
     });
   }, [readStoredSandboxId]);
 
-  const ensureSandbox = useCallback(async () => {
-    if (ensureSandboxPromiseRef.current) {
-      return ensureSandboxPromiseRef.current;
+  const ensureSandbox = useCallback(async (
+    runtime: SandboxRuntime = activeRuntimeRef.current,
+    options: EnsureSandboxOptions = {}
+  ) => {
+    const silent = options.silent === true;
+    const shouldBootstrap = options.bootstrap !== false;
+
+    if (!silent) {
+      activateRuntime(runtime);
+    }
+
+    if (ensureSandboxPromiseRef.current[runtime]) {
+      return ensureSandboxPromiseRef.current[runtime];
     }
 
     const promise = (async () => {
-      const activeId = sandboxIdRef.current;
+      const activeId = sandboxPoolRef.current[runtime];
       if (activeId) {
-        addLog(`Reusing existing sandbox: ${activeId}`);
-        setState((s) => ({ ...s, sandboxId: activeId, status: 'ready', error: null }));
+        addLog(`Reusing existing sandbox (${runtimeLabel(runtime)}): ${activeId}`, silent);
+        if (!silent) {
+          setRuntimeStatus(runtime, { status: 'ready', error: null });
+        }
+        if (shouldBootstrap) {
+          await bootstrapSandboxRuntime(runtime, activeId, silent);
+        }
         return activeId;
       }
 
-      const storedId = readStoredSandboxId();
+      const storedId = readStoredSandboxId(runtime);
       if (storedId) {
-        setState((s) => ({ ...s, sandboxId: storedId, status: 'restoring', error: null }));
-        addLog(`Restoring reusable sandbox: ${storedId}`);
+        if (!silent) {
+          setRuntimeStatus(runtime, { sandboxId: storedId, status: 'restoring', error: null });
+          addLog(`Restoring reusable sandbox (${runtimeLabel(runtime)}): ${storedId}`);
+        }
 
         const isUsable = await validateSandbox(storedId);
         if (isUsable) {
-          sandboxIdRef.current = storedId;
-          addLog(`Reusing existing sandbox: ${storedId}`);
-          setState((s) => ({ ...s, sandboxId: storedId, status: 'ready', error: null }));
+          sandboxPoolRef.current[runtime] = storedId;
+          addLog(`Reusing existing sandbox (${runtimeLabel(runtime)}): ${storedId}`, silent);
+          setRuntimeStatus(runtime, { status: 'ready', error: null });
+          if (shouldBootstrap) {
+            await bootstrapSandboxRuntime(runtime, storedId, silent);
+          }
           return storedId;
         }
 
-        addLog('Stored sandbox is no longer available; creating a new sandbox...');
-        clearStoredSandboxId();
+        addLog(`Stored ${runtimeLabel(runtime)} sandbox is no longer available; creating a new sandbox...`, silent);
+        clearStoredSandboxId(runtime);
       }
 
-      setState((s) => ({
-        ...s,
-        status: 'creating',
-        error: null,
-        logs: [],
-        sandboxId: null,
-        previewUrl: null,
-      }));
-      addLog('Creating sandbox...');
+      if (!silent) {
+        setRuntimeStatus(runtime, {
+          status: 'creating',
+          error: null,
+          logs: [],
+          sandboxId: null,
+          previewUrl: null,
+        });
+        addLog(`Creating ${runtimeLabel(runtime)} sandbox...`);
+      } else {
+        addLog(`Creating ${runtimeLabel(runtime)} sandbox...`, true);
+      }
 
       const data = await apiPost<{ sandboxId: string; status: string }>(
         '/api/daytona/sandbox',
         {}
       );
 
-      sandboxIdRef.current = data.sandboxId;
-      storeSandboxId(data.sandboxId);
-      addLog(`Sandbox created: ${data.sandboxId}`);
-      setState((s) => ({ ...s, sandboxId: data.sandboxId, status: 'ready', error: null }));
+      sandboxPoolRef.current[runtime] = data.sandboxId;
+      storeSandboxId(runtime, data.sandboxId);
+      addLog(`${runtimeLabel(runtime)} sandbox created: ${data.sandboxId}`, silent);
+      setRuntimeStatus(runtime, { status: 'ready', error: null });
+
+      if (shouldBootstrap) {
+        await bootstrapSandboxRuntime(runtime, data.sandboxId, silent);
+      }
 
       return data.sandboxId;
     })();
 
-    ensureSandboxPromiseRef.current = promise;
+    ensureSandboxPromiseRef.current[runtime] = promise;
     try {
       return await promise;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create sandbox';
-      addLog(`ERROR: ${msg}`);
-      setState((s) => ({ ...s, status: 'error', error: msg }));
+      const msg = err instanceof Error ? err.message : `Failed to create ${runtimeLabel(runtime)} sandbox`;
+      addLog(`ERROR: ${msg}`, silent);
+      if (!silent || activeRuntimeRef.current === runtime) {
+        setRuntimeStatus(runtime, { status: 'error', error: msg });
+      }
       throw err;
     } finally {
-      ensureSandboxPromiseRef.current = null;
+      delete ensureSandboxPromiseRef.current[runtime];
     }
-  }, [addLog, clearStoredSandboxId, readStoredSandboxId, storeSandboxId, validateSandbox]);
+  }, [
+    activateRuntime,
+    addLog,
+    bootstrapSandboxRuntime,
+    clearStoredSandboxId,
+    readStoredSandboxId,
+    setRuntimeStatus,
+    storeSandboxId,
+    validateSandbox,
+  ]);
 
-  const createSandbox = useCallback(() => ensureSandbox(), [ensureSandbox]);
+  const prewarmSandboxes = useCallback(async () => {
+    if (prewarmPromiseRef.current) {
+      return prewarmPromiseRef.current;
+    }
+
+    const promise = (async () => {
+      for (const runtime of RUNTIME_PREWARM_ORDER) {
+        try {
+          await ensureSandbox(runtime, { silent: true });
+        } catch (err) {
+          console.warn(`[Sandbox] Failed to prewarm ${runtimeLabel(runtime)} sandbox:`, err);
+        }
+      }
+    })();
+
+    prewarmPromiseRef.current = promise;
+    try {
+      await promise;
+    } finally {
+      prewarmPromiseRef.current = null;
+    }
+  }, [ensureSandbox]);
+
+  const createSandbox = useCallback(
+    (runtime: SandboxRuntime = activeRuntimeRef.current) => ensureSandbox(runtime),
+    [ensureSandbox]
+  );
 
   const syncFiles = useCallback(
-    async (files: SandboxFile[]) => {
-      const sandboxId = sandboxIdRef.current;
-      if (!sandboxId) throw new Error('No sandbox');
+    async (files: SandboxFile[], runtime: SandboxRuntime = activeRuntimeRef.current) => {
+      const sandboxId = sandboxPoolRef.current[runtime];
+      if (!sandboxId) throw new Error(`No ${runtimeLabel(runtime)} sandbox`);
 
       const filesToSync = normalizeSandboxFiles(files);
       const repairedFiles = filesToSync.filter((file, index) => file.content !== files[index]?.content);
 
-      setState((s) => ({ ...s, status: 'syncing', error: null }));
+      setRuntimeStatus(runtime, { status: 'syncing', error: null });
       addLog(`Syncing ${filesToSync.length} files...`);
       if (repairedFiles.length > 0) {
         addLog(`Repaired invalid config files: ${repairedFiles.map((file) => file.path).join(', ')}`);
@@ -269,41 +543,28 @@ export function useSandbox(ownerKey?: string | null) {
           { sandboxId, files: filesToSync, workDir: WORK_DIR }
         );
         addLog(`Synced ${res.fileCount} files to ${res.workDir}`);
-        setState((s) => ({ ...s, status: 'ready' }));
+        setRuntimeStatus(runtime, { status: 'ready' });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to sync files';
         addLog(`ERROR syncing: ${msg}`);
-        setState((s) => ({ ...s, status: 'error', error: msg }));
+        setRuntimeStatus(runtime, { status: 'error', error: msg });
         throw err;
       }
     },
-    [addLog]
+    [addLog, setRuntimeStatus]
   );
 
   const exec = useCallback(
     async (command: string, cwd?: string, timeout?: number): Promise<ExecResult> => {
-      const sandboxId = sandboxIdRef.current;
-      if (!sandboxId) throw new Error('No sandbox');
-
-      addLog(`$ ${command}`);
-      const result = await apiPost<ExecResult>('/api/daytona/exec', {
-        sandboxId,
-        command,
-        cwd: cwd || WORK_DIR,
-        timeout: timeout || 120,
-      });
-      if (result.stdout) addLog(result.stdout.trim());
-      if (result.stderr) addLog(`stderr: ${result.stderr.trim()}`);
-      if (result.exitCode !== 0) addLog(`Exit code: ${result.exitCode}`);
-      return result;
+      return execOnRuntime(activeRuntimeRef.current, command, cwd, timeout);
     },
-    [addLog]
+    [execOnRuntime]
   );
 
-  const stopPreviewServer = useCallback(async () => {
-    if (!sandboxIdRef.current) return;
+  const stopPreviewServer = useCallback(async (runtime: SandboxRuntime = activeRuntimeRef.current) => {
+    if (!sandboxPoolRef.current[runtime]) return;
 
-    setState((s) => ({ ...s, status: 'stopping', previewUrl: null, error: null }));
+    setRuntimeStatus(runtime, { status: 'stopping', previewUrl: null, error: null });
     addLog('Stopping previous preview server...');
 
     const stopCommand = [
@@ -326,7 +587,7 @@ export function useSandbox(ownerKey?: string | null) {
       'sleep 1',
     ].join('\n');
 
-    const stopResult = await exec(stopCommand, '/', 30);
+    const stopResult = await execOnRuntime(runtime, stopCommand, '/', 30);
     if (stopResult.exitCode !== 0) {
       throw new Error(`Failed to stop preview server: ${stopResult.stderr || stopResult.stdout}`);
     }
@@ -340,18 +601,18 @@ export function useSandbox(ownerKey?: string | null) {
       'if curl -fsS --max-time 1 http://127.0.0.1:$port >/dev/null 2>&1; then echo "still_responding_on_$port"; fi',
       'done',
     ].join('\n');
-    const verifyStopResult = await exec(verifyStopCommand, '/', 10);
+    const verifyStopResult = await execOnRuntime(runtime, verifyStopCommand, '/', 10);
     if (verifyStopResult.stdout.includes('still_responding_on_')) {
       throw new Error(`Previous preview server is still responding: ${verifyStopResult.stdout.trim()}`);
     }
 
-    setState((s) => ({ ...s, status: 'ready', previewUrl: null }));
-  }, [addLog, exec]);
+    setRuntimeStatus(runtime, { status: 'ready', previewUrl: null });
+  }, [addLog, execOnRuntime, setRuntimeStatus]);
 
   const getPreviewUrl = useCallback(
-    async (port: number): Promise<string> => {
-      const sandboxId = sandboxIdRef.current;
-      if (!sandboxId) throw new Error('No sandbox');
+    async (port: number, runtime: SandboxRuntime = activeRuntimeRef.current): Promise<string> => {
+      const sandboxId = sandboxPoolRef.current[runtime];
+      if (!sandboxId) throw new Error(`No ${runtimeLabel(runtime)} sandbox`);
 
       addLog(`Getting preview URL for port ${port}...`);
 
@@ -382,7 +643,7 @@ export function useSandbox(ownerKey?: string | null) {
         addLog(`Preview URL (proxied): ${proxiedUrl}`);
         addLog('Waiting for preview proxy route...');
         await waitForPreviewProxy(proxiedUrl);
-        setState((s) => ({ ...s, previewUrl: proxiedUrl }));
+        setRuntimeStatus(runtime, { previewUrl: proxiedUrl });
         return proxiedUrl;
       } catch (err) {
         clearTimeout(timeoutId);
@@ -392,42 +653,49 @@ export function useSandbox(ownerKey?: string | null) {
         throw err;
       }
     },
-    [addLog]
+    [addLog, setRuntimeStatus]
   );
 
   const startDevServer = useCallback(
     async (projectType: string, files: SandboxFile[]) => {
+      const runtime = getSandboxRuntime(projectType);
+      if (!runtime) {
+        throw new Error('Static/CDN projects render locally and do not require a sandbox.');
+      }
+
       if (previewOperationRef.current) {
         throw new Error('Preview operation already in progress');
       }
       previewOperationRef.current = true;
 
+      activateRuntime(runtime);
+
       try {
-        await ensureSandbox();
-        await stopPreviewServer();
+        await ensureSandbox(runtime);
+        await stopPreviewServer(runtime);
         const previewPort = getSandboxPreviewPort(projectType);
 
-        setState((s) => ({ ...s, status: 'preparing', error: null, previewUrl: null }));
+        setRuntimeStatus(runtime, { status: 'preparing', error: null, previewUrl: null });
         addLog('Preparing sandbox workspace...');
         const cleanupCommand = `mkdir -p ${WORK_DIR} && find ${WORK_DIR} -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf -- {} +`;
-        const cleanupRes = await exec(cleanupCommand, '/', 60);
+        const cleanupRes = await execOnRuntime(runtime, cleanupCommand, '/', 60);
         if (cleanupRes.exitCode !== 0) {
           throw new Error(`Workspace cleanup failed: ${cleanupRes.stderr || cleanupRes.stdout}`);
         }
 
-        await syncFiles(files);
+        await syncFiles(files, runtime);
 
         if (projectType === 'nextjs') {
-          setState((s) => ({ ...s, status: 'installing' }));
+          setRuntimeStatus(runtime, { status: 'installing' });
           addLog('Installing npm dependencies (this may take a few minutes)...');
-          const installRes = await exec('npm install --prefer-offline --no-audit --no-fund', WORK_DIR, 600);
+          const installRes = await execOnRuntime(runtime, 'npm install --prefer-offline --no-audit --no-fund', WORK_DIR, 600);
           if (installRes.exitCode !== 0) {
             throw new Error(`npm install failed: ${installRes.stderr || installRes.stdout}`);
           }
 
-          setState((s) => ({ ...s, status: 'starting' }));
+          setRuntimeStatus(runtime, { status: 'starting' });
           addLog(`Starting Next.js dev server on 0.0.0.0:${previewPort}...`);
-          await exec(`nohup npx next dev -p ${previewPort} -H 0.0.0.0 > /tmp/nextdev.log 2>&1 &`, WORK_DIR, 5);
+          await execOnRuntime(runtime, `nohup npx next dev -p ${previewPort} -H 0.0.0.0 > /tmp/nextdev.log 2>&1 &`, WORK_DIR, 5);
           addLog('Waiting for server to start (first compile may take a moment)...');
           await new Promise((r) => setTimeout(r, 15000));
 
@@ -442,95 +710,113 @@ export function useSandbox(ownerKey?: string | null) {
             'done',
             'echo "next_not_ready"',
           ].join('\n');
-          const checkRes = await exec(nextReadyCheckCommand, WORK_DIR, 150);
+          const checkRes = await execOnRuntime(runtime, nextReadyCheckCommand, WORK_DIR, 150);
           addLog(`Server check: ${checkRes.stdout.trim()}`);
 
           if (!checkRes.stdout.includes('next_ready')) {
-            const logs = await exec('cat /tmp/nextdev.log 2>/dev/null | tail -20', WORK_DIR, 5);
+            const logs = await execOnRuntime(runtime, 'cat /tmp/nextdev.log 2>/dev/null | tail -20', WORK_DIR, 5);
             throw new Error(`Next.js server failed to start: ${logs.stdout.trim() || 'no logs'}`);
           }
 
-          const url = await getPreviewUrl(previewPort);
-          setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
+          const url = await getPreviewUrl(previewPort, runtime);
+          setRuntimeStatus(runtime, { status: 'ready', previewUrl: url });
           return url;
         }
 
         if (projectType === 'express-api') {
-          setState((s) => ({ ...s, status: 'installing' }));
+          setRuntimeStatus(runtime, { status: 'installing' });
           addLog('Installing npm dependencies (this may take a few minutes)...');
-          const installRes = await exec('npm install --prefer-offline --no-audit --no-fund', WORK_DIR, 600);
+          const installRes = await execOnRuntime(runtime, 'npm install --prefer-offline --no-audit --no-fund', WORK_DIR, 600);
           if (installRes.exitCode !== 0) {
             throw new Error(`npm install failed: ${installRes.stderr || installRes.stdout}`);
           }
 
-          setState((s) => ({ ...s, status: 'starting' }));
+          setRuntimeStatus(runtime, { status: 'starting' });
           addLog(`Starting Express server on 0.0.0.0:${previewPort}...`);
-          await exec(`nohup env HOST=0.0.0.0 PORT=${previewPort} node server.js > /tmp/server.log 2>&1 &`, WORK_DIR, 5);
+          await execOnRuntime(runtime, `nohup env HOST=0.0.0.0 PORT=${previewPort} node server.js > /tmp/server.log 2>&1 &`, WORK_DIR, 5);
           await new Promise((r) => setTimeout(r, 5000));
 
-          const url = await getPreviewUrl(previewPort);
-          setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
+          const url = await getPreviewUrl(previewPort, runtime);
+          setRuntimeStatus(runtime, { status: 'ready', previewUrl: url });
           return url;
         }
 
         if (projectType === 'flask-api') {
-          setState((s) => ({ ...s, status: 'installing' }));
+          setRuntimeStatus(runtime, { status: 'installing' });
           addLog('Installing Python dependencies...');
-          await exec('pip install -r requirements.txt', WORK_DIR, 300);
+          await execOnRuntime(runtime, 'pip install -r requirements.txt', WORK_DIR, 300);
 
-          setState((s) => ({ ...s, status: 'starting' }));
+          setRuntimeStatus(runtime, { status: 'starting' });
           addLog(`Starting Flask server on 0.0.0.0:${previewPort}...`);
-          await exec(`nohup env FLASK_RUN_HOST=0.0.0.0 PORT=${previewPort} python app.py > /tmp/flask.log 2>&1 &`, WORK_DIR, 5);
+          await execOnRuntime(runtime, `nohup env FLASK_RUN_HOST=0.0.0.0 PORT=${previewPort} python app.py > /tmp/flask.log 2>&1 &`, WORK_DIR, 5);
           await new Promise((r) => setTimeout(r, 5000));
 
-          const url = await getPreviewUrl(previewPort);
-          setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
+          const url = await getPreviewUrl(previewPort, runtime);
+          setRuntimeStatus(runtime, { status: 'ready', previewUrl: url });
           return url;
         }
 
         // Static sites, React CDN, Vue CDN, Svelte CDN
-        setState((s) => ({ ...s, status: 'starting' }));
+        setRuntimeStatus(runtime, { status: 'starting' });
         addLog(`Starting HTTP server on 0.0.0.0:${previewPort}...`);
-        await exec(`nohup python3 -m http.server ${previewPort} --bind 0.0.0.0 > /tmp/http.log 2>&1 &`, WORK_DIR, 5);
+        await execOnRuntime(runtime, `nohup python3 -m http.server ${previewPort} --bind 0.0.0.0 > /tmp/http.log 2>&1 &`, WORK_DIR, 5);
         await new Promise((r) => setTimeout(r, 3000));
 
-        const url = await getPreviewUrl(previewPort);
-        setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
+        const url = await getPreviewUrl(previewPort, runtime);
+        setRuntimeStatus(runtime, { status: 'ready', previewUrl: url });
         return url;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to start server';
         addLog(`ERROR: ${msg}`);
-        setState((s) => ({ ...s, status: 'error', error: msg }));
+        setRuntimeStatus(runtime, { status: 'error', error: msg });
         throw err;
       } finally {
         previewOperationRef.current = false;
       }
     },
-    [addLog, ensureSandbox, exec, getPreviewUrl, stopPreviewServer, syncFiles]
+    [
+      activateRuntime,
+      addLog,
+      ensureSandbox,
+      execOnRuntime,
+      getPreviewUrl,
+      setRuntimeStatus,
+      stopPreviewServer,
+      syncFiles,
+    ]
   );
 
-  const destroySandbox = useCallback(async () => {
-    const sandboxId = sandboxIdRef.current;
+  const destroySandbox = useCallback(async (runtime: SandboxRuntime = activeRuntimeRef.current) => {
+    const sandboxId = sandboxPoolRef.current[runtime];
     if (!sandboxId) return;
 
-    sandboxIdRef.current = null;
-    ensureSandboxPromiseRef.current = null;
+    sandboxPoolRef.current[runtime] = null;
+    bootstrappedRuntimeRef.current[runtime] = false;
+    delete ensureSandboxPromiseRef.current[runtime];
+    delete bootstrapSandboxPromiseRef.current[runtime];
 
-    addLog('Destroying sandbox...');
+    addLog(`Destroying ${runtimeLabel(runtime)} sandbox...`);
     try {
       await fetch(`/api/daytona/sandbox?sandboxId=${encodeURIComponent(sandboxId)}`, { method: 'DELETE' });
-      addLog('Sandbox destroyed.');
+      addLog(`${runtimeLabel(runtime)} sandbox destroyed.`);
     } catch {
       // Ignore errors on cleanup
     }
-    clearStoredSandboxId();
-    setState({ sandboxId: null, status: 'idle', previewUrl: null, error: null, logs: [] });
-  }, [addLog, clearStoredSandboxId]);
+    clearStoredSandboxId(runtime);
+    setRuntimeStatus(runtime, {
+      sandboxId: null,
+      status: 'idle',
+      previewUrl: null,
+      error: null,
+      logs: [],
+    });
+  }, [addLog, clearStoredSandboxId, setRuntimeStatus]);
 
   return {
     ...state,
     createSandbox,
     ensureSandbox,
+    prewarmSandboxes,
     syncFiles,
     exec,
     getPreviewUrl,
