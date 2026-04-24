@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { buildSandboxPreviewUrl, isSandboxServerReady, normalizeSandboxFiles } from '@/lib/sandbox-files';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { buildSandboxPreviewUrl, normalizeSandboxFiles } from '@/lib/sandbox-files';
 
 export interface SandboxFile {
   path: string;
@@ -14,16 +14,37 @@ export interface ExecResult {
 
 export interface SandboxState {
   sandboxId: string | null;
-  status: 'idle' | 'creating' | 'syncing' | 'installing' | 'starting' | 'ready' | 'error';
+  status: 'idle' | 'creating' | 'restoring' | 'preparing' | 'syncing' | 'installing' | 'starting' | 'stopping' | 'ready' | 'error';
   previewUrl: string | null;
   error: string | null;
   logs: string[];
 }
 
 const WORK_DIR = '/home/daytona/project';
-const SESSION_KEY = 'daytona_sandbox_id';
+const SESSION_KEY_PREFIX = 'daytona_sandbox_id';
 const PREVIEW_PROXY_READY_TIMEOUT_MS = 30000;
 const PREVIEW_PROXY_RETRY_MS = 1000;
+const NEXTJS_PREVIEW_PORT = 3001;
+const EXPRESS_PREVIEW_PORT = 3002;
+const STATIC_SITE_PREVIEW_PORT = 4173;
+const FLASK_PREVIEW_PORT = 5000;
+const MANAGED_PREVIEW_PORTS = [
+  NEXTJS_PREVIEW_PORT,
+  EXPRESS_PREVIEW_PORT,
+  STATIC_SITE_PREVIEW_PORT,
+  FLASK_PREVIEW_PORT,
+];
+const KILL_PREVIEW_PORTS = [3000, ...MANAGED_PREVIEW_PORTS];
+const VERIFY_PREVIEW_PORTS = MANAGED_PREVIEW_PORTS;
+
+export function getSandboxPreviewPort(projectType?: string | null): number {
+  if (projectType === 'nextjs') return NEXTJS_PREVIEW_PORT;
+  if (projectType === 'express-api') return EXPRESS_PREVIEW_PORT;
+  if (projectType === 'flask-api') return FLASK_PREVIEW_PORT;
+  return STATIC_SITE_PREVIEW_PORT;
+}
+
+const getSessionKey = (scope: string) => `${SESSION_KEY_PREFIX}:${scope}`;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,13 +96,7 @@ async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<T
   return data as T;
 }
 
-/** Fire-and-forget sandbox deletion — works even during page unload */
-function deleteSandboxFireAndForget(sandboxId: string) {
-  const url = `/api/daytona/sandbox?sandboxId=${encodeURIComponent(sandboxId)}`;
-  fetch(url, { method: 'DELETE', keepalive: true }).catch(() => { });
-}
-
-export function useSandbox() {
+export function useSandbox(ownerKey?: string | null) {
   const [state, setState] = useState<SandboxState>({
     sandboxId: null,
     status: 'idle',
@@ -90,52 +105,121 @@ export function useSandbox() {
     logs: [],
   });
 
-  // Direct mutable ref for sandboxId — updated immediately, no React batching
+  const sandboxScope = useMemo(() => ownerKey?.trim() || 'anonymous', [ownerKey]);
+  const sessionKey = useMemo(() => getSessionKey(sandboxScope), [sandboxScope]);
+
+  // Direct mutable ref for sandboxId - updated immediately, no React batching.
   const sandboxIdRef = useRef<string | null>(null);
-  const busyRef = useRef(false); // Prevent double-invocation
+  const ensureSandboxPromiseRef = useRef<Promise<string> | null>(null);
+  const previewOperationRef = useRef(false);
 
   const addLog = useCallback((msg: string) => {
     console.log(`[Sandbox] ${msg}`);
-    setState((s) => ({ ...s, logs: [...s.logs, msg] }));
+    setState((s) => ({ ...s, logs: [...s.logs, msg].slice(-250) }));
   }, []);
 
-  // Clean up any orphaned sandbox from a previous session on mount
-  useEffect(() => {
+  const readStoredSandboxId = useCallback(() => {
     try {
-      const orphanedId = sessionStorage.getItem(SESSION_KEY);
-      if (orphanedId) {
-        console.log(`[Sandbox] Cleaning up orphaned sandbox: ${orphanedId}`);
-        deleteSandboxFireAndForget(orphanedId);
-        sessionStorage.removeItem(SESSION_KEY);
-      }
+      return sessionStorage.getItem(sessionKey);
+    } catch {
+      return null;
+    }
+  }, [sessionKey]);
+
+  const storeSandboxId = useCallback((sandboxId: string) => {
+    try {
+      sessionStorage.setItem(sessionKey, sandboxId);
     } catch {
       // sessionStorage not available
     }
+  }, [sessionKey]);
+
+  const clearStoredSandboxId = useCallback(() => {
+    try {
+      sessionStorage.removeItem(sessionKey);
+    } catch {
+      // sessionStorage not available
+    }
+  }, [sessionKey]);
+
+  const validateSandbox = useCallback(async (sandboxId: string) => {
+    try {
+      const result = await apiPost<ExecResult>('/api/daytona/exec', {
+        sandboxId,
+        command: 'printf sandbox-ready',
+        cwd: '/',
+        timeout: 10,
+      });
+      return result.exitCode === 0;
+    } catch {
+      return false;
+    }
   }, []);
 
-  const createSandbox = useCallback(async () => {
-    // Guard against double-invocation
-    if (busyRef.current) {
-      addLog('Sandbox operation already in progress, skipping...');
-      throw new Error('Sandbox operation already in progress');
-    }
-    busyRef.current = true;
+  useEffect(() => {
+    ensureSandboxPromiseRef.current = null;
+    sandboxIdRef.current = null;
 
-    try {
-      // Destroy any existing sandbox first
-      const existingId = sandboxIdRef.current;
-      if (existingId) {
-        addLog('Destroying previous sandbox...');
-        sandboxIdRef.current = null;
-        try {
-          await fetch(`/api/daytona/sandbox?sandboxId=${encodeURIComponent(existingId)}`, { method: 'DELETE' });
-        } catch {
-          // Ignore cleanup errors
-        }
-        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
+    const storedSandboxId = readStoredSandboxId();
+    if (storedSandboxId) {
+      sandboxIdRef.current = storedSandboxId;
+      setState({
+        sandboxId: storedSandboxId,
+        status: 'ready',
+        previewUrl: null,
+        error: null,
+        logs: [`Restored reusable sandbox: ${storedSandboxId}`],
+      });
+      return;
+    }
+
+    setState({
+      sandboxId: null,
+      status: 'idle',
+      previewUrl: null,
+      error: null,
+      logs: [],
+    });
+  }, [readStoredSandboxId]);
+
+  const ensureSandbox = useCallback(async () => {
+    if (ensureSandboxPromiseRef.current) {
+      return ensureSandboxPromiseRef.current;
+    }
+
+    const promise = (async () => {
+      const activeId = sandboxIdRef.current;
+      if (activeId) {
+        addLog(`Reusing existing sandbox: ${activeId}`);
+        setState((s) => ({ ...s, sandboxId: activeId, status: 'ready', error: null }));
+        return activeId;
       }
 
-      setState((s) => ({ ...s, status: 'creating', error: null, logs: [], sandboxId: null, previewUrl: null }));
+      const storedId = readStoredSandboxId();
+      if (storedId) {
+        setState((s) => ({ ...s, sandboxId: storedId, status: 'restoring', error: null }));
+        addLog(`Restoring reusable sandbox: ${storedId}`);
+
+        const isUsable = await validateSandbox(storedId);
+        if (isUsable) {
+          sandboxIdRef.current = storedId;
+          addLog(`Reusing existing sandbox: ${storedId}`);
+          setState((s) => ({ ...s, sandboxId: storedId, status: 'ready', error: null }));
+          return storedId;
+        }
+
+        addLog('Stored sandbox is no longer available; creating a new sandbox...');
+        clearStoredSandboxId();
+      }
+
+      setState((s) => ({
+        ...s,
+        status: 'creating',
+        error: null,
+        logs: [],
+        sandboxId: null,
+        previewUrl: null,
+      }));
       addLog('Creating sandbox...');
 
       const data = await apiPost<{ sandboxId: string; status: string }>(
@@ -143,26 +227,28 @@ export function useSandbox() {
         {}
       );
 
-      // Store sandboxId in ref IMMEDIATELY — no React batching delay
       sandboxIdRef.current = data.sandboxId;
+      storeSandboxId(data.sandboxId);
       addLog(`Sandbox created: ${data.sandboxId}`);
-      setState((s) => ({ ...s, sandboxId: data.sandboxId, status: 'ready' }));
-
-      // Persist for orphan cleanup on refresh
-      try { sessionStorage.setItem(SESSION_KEY, data.sandboxId); } catch { }
+      setState((s) => ({ ...s, sandboxId: data.sandboxId, status: 'ready', error: null }));
 
       return data.sandboxId;
+    })();
+
+    ensureSandboxPromiseRef.current = promise;
+    try {
+      return await promise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create sandbox';
-      if (msg !== 'Sandbox operation already in progress') {
-        addLog(`ERROR: ${msg}`);
-      }
+      addLog(`ERROR: ${msg}`);
       setState((s) => ({ ...s, status: 'error', error: msg }));
       throw err;
     } finally {
-      busyRef.current = false;
+      ensureSandboxPromiseRef.current = null;
     }
-  }, [addLog]);
+  }, [addLog, clearStoredSandboxId, readStoredSandboxId, storeSandboxId, validateSandbox]);
+
+  const createSandbox = useCallback(() => ensureSandbox(), [ensureSandbox]);
 
   const syncFiles = useCallback(
     async (files: SandboxFile[]) => {
@@ -214,6 +300,54 @@ export function useSandbox() {
     [addLog]
   );
 
+  const stopPreviewServer = useCallback(async () => {
+    if (!sandboxIdRef.current) return;
+
+    setState((s) => ({ ...s, status: 'stopping', previewUrl: null, error: null }));
+    addLog('Stopping previous preview server...');
+
+    const stopCommand = [
+      'set +e',
+      `for port in ${KILL_PREVIEW_PORTS.join(' ')}; do`,
+      'if command -v fuser >/dev/null 2>&1; then fuser -k $port/tcp 2>/dev/null || true; fi',
+      'if command -v lsof >/dev/null 2>&1; then lsof -ti:$port 2>/dev/null | xargs -r kill 2>/dev/null || true; fi',
+      'if command -v lsof >/dev/null 2>&1; then lsof -ti:$port 2>/dev/null | xargs -r kill -9 2>/dev/null || true; fi',
+      'if command -v ss >/dev/null 2>&1; then ss -ltnp "sport = :$port" 2>/dev/null | sed -n "s/.*pid=\\([0-9][0-9]*\\).*/\\1/p" | sort -u | xargs -r kill 2>/dev/null || true; fi',
+      'if command -v ss >/dev/null 2>&1; then ss -ltnp "sport = :$port" 2>/dev/null | sed -n "s/.*pid=\\([0-9][0-9]*\\).*/\\1/p" | sort -u | xargs -r kill -9 2>/dev/null || true; fi',
+      'done',
+      'ps -eo pid=,args= | awk \'/[n]ext dev|[p]ython3 -m http.server|[p]ython -m http.server|[n]ode server.js|[p]ython app.py/ {print $1}\' | xargs -r kill 2>/dev/null || true',
+      'sleep 1',
+      'ps -eo pid=,args= | awk \'/[n]ext dev|[p]ython3 -m http.server|[p]ython -m http.server|[n]ode server.js|[p]ython app.py/ {print $1}\' | xargs -r kill -9 2>/dev/null || true',
+      'pkill -f "[n]ext dev" 2>/dev/null || true',
+      'pkill -f "[p]ython3 -m http.server" 2>/dev/null || true',
+      'pkill -f "[p]ython -m http.server" 2>/dev/null || true',
+      'pkill -f "[n]ode server.js" 2>/dev/null || true',
+      'pkill -f "[p]ython app.py" 2>/dev/null || true',
+      'sleep 1',
+    ].join('\n');
+
+    const stopResult = await exec(stopCommand, '/', 30);
+    if (stopResult.exitCode !== 0) {
+      throw new Error(`Failed to stop preview server: ${stopResult.stderr || stopResult.stdout}`);
+    }
+
+    const verifyStopCommand = [
+      'set +e',
+      `for port in ${VERIFY_PREVIEW_PORTS.join(' ')}; do`,
+      'for i in $(seq 1 10); do',
+      'if curl -fsS --max-time 1 http://127.0.0.1:$port >/dev/null 2>&1; then sleep 1; else break; fi',
+      'done',
+      'if curl -fsS --max-time 1 http://127.0.0.1:$port >/dev/null 2>&1; then echo "still_responding_on_$port"; fi',
+      'done',
+    ].join('\n');
+    const verifyStopResult = await exec(verifyStopCommand, '/', 10);
+    if (verifyStopResult.stdout.includes('still_responding_on_')) {
+      throw new Error(`Previous preview server is still responding: ${verifyStopResult.stdout.trim()}`);
+    }
+
+    setState((s) => ({ ...s, status: 'ready', previewUrl: null }));
+  }, [addLog, exec]);
+
   const getPreviewUrl = useCallback(
     async (port: number): Promise<string> => {
       const sandboxId = sandboxIdRef.current;
@@ -263,14 +397,26 @@ export function useSandbox() {
 
   const startDevServer = useCallback(
     async (projectType: string, files: SandboxFile[]) => {
-      const sandboxId = sandboxIdRef.current;
-      if (!sandboxId) throw new Error('No sandbox');
+      if (previewOperationRef.current) {
+        throw new Error('Preview operation already in progress');
+      }
+      previewOperationRef.current = true;
 
       try {
-        // Step 1: Sync files
+        await ensureSandbox();
+        await stopPreviewServer();
+        const previewPort = getSandboxPreviewPort(projectType);
+
+        setState((s) => ({ ...s, status: 'preparing', error: null, previewUrl: null }));
+        addLog('Preparing sandbox workspace...');
+        const cleanupCommand = `mkdir -p ${WORK_DIR} && find ${WORK_DIR} -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf -- {} +`;
+        const cleanupRes = await exec(cleanupCommand, '/', 60);
+        if (cleanupRes.exitCode !== 0) {
+          throw new Error(`Workspace cleanup failed: ${cleanupRes.stderr || cleanupRes.stdout}`);
+        }
+
         await syncFiles(files);
 
-        // Step 2: Install dependencies + start server based on project type
         if (projectType === 'nextjs') {
           setState((s) => ({ ...s, status: 'installing' }));
           addLog('Installing npm dependencies (this may take a few minutes)...');
@@ -280,20 +426,31 @@ export function useSandbox() {
           }
 
           setState((s) => ({ ...s, status: 'starting' }));
-          addLog('Starting Next.js dev server on 0.0.0.0:3000...');
-          await exec('nohup npx next dev -p 3000 -H 0.0.0.0 > /tmp/nextdev.log 2>&1 &', WORK_DIR, 5);
+          addLog(`Starting Next.js dev server on 0.0.0.0:${previewPort}...`);
+          await exec(`nohup npx next dev -p ${previewPort} -H 0.0.0.0 > /tmp/nextdev.log 2>&1 &`, WORK_DIR, 5);
           addLog('Waiting for server to start (first compile may take a moment)...');
           await new Promise((r) => setTimeout(r, 15000));
 
-          const checkRes = await exec('for i in $(seq 1 24); do code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 2>/dev/null || echo "not_ready"); if echo "$code" | grep -Eq "^[1-9][0-9][0-9]$"; then echo "$code"; exit 0; fi; sleep 5; done; echo "$code"', WORK_DIR, 150);
+          const nextReadyCheckCommand = [
+            'for i in $(seq 1 24); do',
+            `body=$(curl -sS http://127.0.0.1:${previewPort} 2>/tmp/next_check.err || true)`,
+            'if printf "%s" "$body" | grep -q "Directory listing for /"; then echo "static_server_still_serving"; sleep 5; continue; fi',
+            'if printf "%s" "$body" | grep -Eq "(_next/static|self\\.__next_f)"; then echo "next_ready"; exit 0; fi',
+            `code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${previewPort} 2>/dev/null || echo "not_ready")`,
+            'echo "$code"',
+            'sleep 5',
+            'done',
+            'echo "next_not_ready"',
+          ].join('\n');
+          const checkRes = await exec(nextReadyCheckCommand, WORK_DIR, 150);
           addLog(`Server check: ${checkRes.stdout.trim()}`);
 
-          if (!isSandboxServerReady(checkRes.stdout)) {
+          if (!checkRes.stdout.includes('next_ready')) {
             const logs = await exec('cat /tmp/nextdev.log 2>/dev/null | tail -20', WORK_DIR, 5);
             throw new Error(`Next.js server failed to start: ${logs.stdout.trim() || 'no logs'}`);
           }
 
-          const url = await getPreviewUrl(3000);
+          const url = await getPreviewUrl(previewPort);
           setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
           return url;
         }
@@ -307,11 +464,11 @@ export function useSandbox() {
           }
 
           setState((s) => ({ ...s, status: 'starting' }));
-          addLog('Starting Express server on 0.0.0.0:3000...');
-          await exec('nohup env HOST=0.0.0.0 node server.js > /tmp/server.log 2>&1 &', WORK_DIR, 5);
+          addLog(`Starting Express server on 0.0.0.0:${previewPort}...`);
+          await exec(`nohup env HOST=0.0.0.0 PORT=${previewPort} node server.js > /tmp/server.log 2>&1 &`, WORK_DIR, 5);
           await new Promise((r) => setTimeout(r, 5000));
 
-          const url = await getPreviewUrl(3000);
+          const url = await getPreviewUrl(previewPort);
           setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
           return url;
         }
@@ -322,22 +479,22 @@ export function useSandbox() {
           await exec('pip install -r requirements.txt', WORK_DIR, 300);
 
           setState((s) => ({ ...s, status: 'starting' }));
-          addLog('Starting Flask server on 0.0.0.0:5000...');
-          await exec('nohup env FLASK_RUN_HOST=0.0.0.0 python app.py > /tmp/flask.log 2>&1 &', WORK_DIR, 5);
+          addLog(`Starting Flask server on 0.0.0.0:${previewPort}...`);
+          await exec(`nohup env FLASK_RUN_HOST=0.0.0.0 PORT=${previewPort} python app.py > /tmp/flask.log 2>&1 &`, WORK_DIR, 5);
           await new Promise((r) => setTimeout(r, 5000));
 
-          const url = await getPreviewUrl(5000);
+          const url = await getPreviewUrl(previewPort);
           setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
           return url;
         }
 
         // Static sites, React CDN, Vue CDN, Svelte CDN
         setState((s) => ({ ...s, status: 'starting' }));
-        addLog('Starting HTTP server on 0.0.0.0:3000...');
-        await exec('nohup python3 -m http.server 3000 --bind 0.0.0.0 > /tmp/http.log 2>&1 &', WORK_DIR, 5);
+        addLog(`Starting HTTP server on 0.0.0.0:${previewPort}...`);
+        await exec(`nohup python3 -m http.server ${previewPort} --bind 0.0.0.0 > /tmp/http.log 2>&1 &`, WORK_DIR, 5);
         await new Promise((r) => setTimeout(r, 3000));
 
-        const url = await getPreviewUrl(3000);
+        const url = await getPreviewUrl(previewPort);
         setState((s) => ({ ...s, status: 'ready', previewUrl: url }));
         return url;
       } catch (err) {
@@ -345,18 +502,19 @@ export function useSandbox() {
         addLog(`ERROR: ${msg}`);
         setState((s) => ({ ...s, status: 'error', error: msg }));
         throw err;
+      } finally {
+        previewOperationRef.current = false;
       }
     },
-    [syncFiles, exec, getPreviewUrl, addLog]
+    [addLog, ensureSandbox, exec, getPreviewUrl, stopPreviewServer, syncFiles]
   );
 
   const destroySandbox = useCallback(async () => {
     const sandboxId = sandboxIdRef.current;
     if (!sandboxId) return;
 
-    // Clear ref immediately to prevent any further operations
     sandboxIdRef.current = null;
-    busyRef.current = false;
+    ensureSandboxPromiseRef.current = null;
 
     addLog('Destroying sandbox...');
     try {
@@ -365,41 +523,19 @@ export function useSandbox() {
     } catch {
       // Ignore errors on cleanup
     }
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { }
+    clearStoredSandboxId();
     setState({ sandboxId: null, status: 'idle', previewUrl: null, error: null, logs: [] });
-  }, [addLog]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      const sid = sandboxIdRef.current;
-      if (sid) {
-        deleteSandboxFireAndForget(sid);
-        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
-      }
-    };
-  }, []);
-
-  // Cleanup on tab/window close
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      const sid = sandboxIdRef.current;
-      if (sid) {
-        deleteSandboxFireAndForget(sid);
-        try { sessionStorage.removeItem(SESSION_KEY); } catch { }
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+  }, [addLog, clearStoredSandboxId]);
 
   return {
     ...state,
     createSandbox,
+    ensureSandbox,
     syncFiles,
     exec,
     getPreviewUrl,
     startDevServer,
+    stopPreviewServer,
     destroySandbox,
     WORK_DIR,
   };

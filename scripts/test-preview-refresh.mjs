@@ -20,10 +20,12 @@ assert.notEqual(handlerEnd, -1, 'Refresh Preview click handler should close befo
 const refreshHandler = handlerSource.slice(0, handlerEnd);
 const syncIndex = refreshHandler.indexOf('await sandbox.syncFiles(sandboxFiles)');
 const previewIndex = refreshHandler.indexOf('await sandbox.getPreviewUrl(');
+const portHelperIndex = refreshHandler.indexOf('getSandboxPreviewPort(currentProject?.projectType');
 const keyIndex = refreshHandler.indexOf('setPreviewKey((prev) => prev + 1)');
 
 assert.notEqual(syncIndex, -1, 'Sandbox refresh should sync files before reloading preview');
 assert.notEqual(previewIndex, -1, 'Sandbox refresh should request a fresh preview URL');
+assert.notEqual(portHelperIndex, -1, 'Sandbox refresh should use the project type-specific preview port');
 assert.notEqual(keyIndex, -1, 'Sandbox refresh should reload the iframe after refreshing');
 assert.ok(
   syncIndex < previewIndex && previewIndex < keyIndex,
