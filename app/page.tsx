@@ -291,6 +291,14 @@ interface Message {
   isDebuggerProposal?: boolean;
 }
 
+type ConsoleLogType = 'log' | 'error' | 'warn' | 'info';
+
+interface ConsoleLogEntry {
+  type: ConsoleLogType;
+  message: string;
+  timestamp: number;
+}
+
 interface OrchestrationGroup {
   id: string;
   request: Message | null;
@@ -1708,6 +1716,100 @@ const PromptInput = memo(({
 });
 PromptInput.displayName = 'PromptInput';
 
+interface ConsolePanelProps {
+  logs: ConsoleLogEntry[];
+  endRef: React.RefObject<HTMLDivElement | null>;
+  isDebuggerRunning: boolean;
+  onRunDebugger: () => void;
+  onClear: () => void;
+  className?: string;
+  collapsible?: boolean;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
+}
+
+const ConsolePanel = memo(({
+  logs,
+  endRef,
+  isDebuggerRunning,
+  onRunDebugger,
+  onClear,
+  className,
+  collapsible = false,
+  isExpanded = true,
+  onToggleExpanded,
+}: ConsolePanelProps) => {
+  const hasErrors = logs.some(log => log.type === 'error');
+
+  return (
+    <div className={cn(
+      "bg-[#0a0a0a] flex flex-col overflow-hidden",
+      className
+    )}>
+      <div
+        className={cn(
+          "h-8 border-b border-white/5 flex items-center justify-between px-4 bg-black/50 shrink-0",
+          collapsible && "cursor-pointer hover:bg-black/70 transition-colors"
+        )}
+        onClick={collapsible ? onToggleExpanded : undefined}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <TerminalIcon className="w-3 h-3 text-accent shrink-0" />
+          <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest truncate">Console Output</span>
+          {collapsible && (
+            <ChevronDown className={cn(
+              "w-3 h-3 text-white/30 transition-transform duration-300 shrink-0",
+              !isExpanded && "rotate-180"
+            )} />
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+          {hasErrors && (
+            <button
+              onClick={onRunDebugger}
+              disabled={isDebuggerRunning}
+              className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[9px] font-mono font-bold hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+            >
+              <Zap className={cn("w-3 h-3", isDebuggerRunning && "animate-pulse")} />
+              RUN DEBUGGER
+            </button>
+          )}
+          <button
+            onClick={onClear}
+            className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white transition-colors"
+            title="Clear Console"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] custom-scrollbar space-y-1 min-h-0">
+          {logs.length === 0 && (
+            <div className="h-full flex items-center justify-center text-white/20 italic text-center px-3">
+              No logs yet. Interact with the preview to see output.
+            </div>
+          )}
+          {logs.map((log, i) => (
+            <div key={`${log.timestamp}-${i}`} className={cn(
+              "flex gap-2 py-0.5 px-2 rounded",
+              log.type === 'error' ? "bg-red-500/10 text-red-400" :
+              log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" :
+              "text-white/70"
+            )}>
+              <span className="opacity-30 shrink-0">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
+              <span className="break-all whitespace-pre-wrap">{log.message}</span>
+            </div>
+          ))}
+          <div ref={endRef} />
+        </div>
+      )}
+    </div>
+  );
+});
+ConsolePanel.displayName = 'ConsolePanel';
+
 // --- Main Page ---
 
 export default function AgenticDevPage() {
@@ -1738,9 +1840,11 @@ export default function AgenticDevPage() {
   });
   const [previewKey, setPreviewKey] = useState(0);
   const [isRefreshingPreview, setIsRefreshingPreview] = useState(false);
-  const [consoleLogs, setConsoleLogs] = useState<{ type: 'log' | 'error' | 'warn' | 'info'; message: string; timestamp: number }[]>([]);
+  const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([]);
   const [isDebuggerRunning, setIsDebuggerRunning] = useState(false);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
+  const [isSandboxTerminalExpanded, setIsSandboxTerminalExpanded] = useState(true);
+  const [isSandboxConsoleExpanded, setIsSandboxConsoleExpanded] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const lastNotifiedErrorCount = useRef(0);
 
@@ -1822,6 +1926,9 @@ export default function AgenticDevPage() {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
   const currentProjectAiModel = currentProject?.aiModel || DEFAULT_AI_MODEL;
+  const sandboxPreviewPanelCount = Number(isSandboxTerminalExpanded) + Number(isSandboxConsoleExpanded);
+  const sandboxPreviewGridColumns = sandboxPreviewPanelCount === 1 ? 'grid-cols-1' : 'grid-cols-2';
+  const hasHiddenSandboxPreviewPanels = !isSandboxTerminalExpanded || !isSandboxConsoleExpanded;
   const groupedMessages = useMemo(() => buildOrchestrationGroups(messages), [messages]);
   const latestGroupId = groupedMessages[groupedMessages.length - 1]?.id ?? null;
   const activeAgentName = projectState.currentAgentIndex >= 0 ? AGENTS[projectState.currentAgentIndex]?.name : undefined;
@@ -2451,8 +2558,14 @@ ${context}`;
   // Console Message Listener
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'CONSOLE_LOG') {
-        setConsoleLogs(prev => [...prev, { ...event.data.payload, timestamp: Date.now() }].slice(-100));
+      const payload = event.data?.payload;
+      if (
+        event.data?.type === 'CONSOLE_LOG' &&
+        payload &&
+        ['log', 'error', 'warn', 'info'].includes(payload.type) &&
+        typeof payload.message === 'string'
+      ) {
+        setConsoleLogs(prev => [...prev, { type: payload.type, message: payload.message, timestamp: Date.now() }].slice(-100));
       }
     };
     window.addEventListener('message', handleMessage);
@@ -3776,16 +3889,21 @@ ${context}`;
                   <button
                     onClick={async () => {
                       if (isSandboxPreview && sandbox.sandboxId) {
+                        setIsRefreshingPreview(true);
                         const sandboxFiles: SandboxFile[] = files.map((f) => ({
                           path: f.path,
                           content: f.content,
                         }));
                         try {
                           await sandbox.syncFiles(sandboxFiles);
+                          const previewPort = currentProject?.projectType === 'flask-api' ? 5000 : 3000;
+                          await sandbox.getPreviewUrl(previewPort);
                           setPreviewKey((prev) => prev + 1);
-                          showToast('Files synced', 'success');
+                          showToast('Preview refreshed', 'success');
                         } catch (err) {
-                          showToast('Sync failed', 'error');
+                          showToast(err instanceof Error ? err.message : 'Refresh failed', 'error');
+                        } finally {
+                          setIsRefreshingPreview(false);
                         }
                       } else {
                         setIsRefreshingPreview(true);
@@ -3840,12 +3958,71 @@ ${context}`;
                     src={sandbox.previewUrl}
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                   />
-                  <div className="h-[250px] border-t border-white/10 shrink-0">
-                    <Terminal
-                      onExec={sandbox.exec}
-                      disabled={!sandbox.sandboxId}
-                      workDir={sandbox.WORK_DIR}
+                  <div className={cn(
+                    "border-t border-white/10 shrink-0 bg-[#0a0a0a] min-h-0 flex flex-col overflow-hidden transition-[height] duration-300",
+                    sandboxPreviewPanelCount > 0 ? "h-[250px]" : "h-8"
+                  )}>
+                    {hasHiddenSandboxPreviewPanels && (
+                      <div className="h-8 border-b border-white/5 flex items-center justify-between gap-3 px-3 bg-black/50 shrink-0">
+                        <span className="text-[10px] font-mono text-white/35 uppercase tracking-widest truncate">
+                          Hidden Panels
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!isSandboxTerminalExpanded && (
+                            <button
+                              onClick={() => setIsSandboxTerminalExpanded(true)}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 text-white/55 hover:text-white hover:bg-white/10 transition-colors text-[9px] font-mono font-bold uppercase"
+                              title="Show Terminal"
+                            >
+                              <TerminalIcon className="w-3 h-3" />
+                              Show Terminal
+                            </button>
+                          )}
+                          {!isSandboxConsoleExpanded && (
+                            <button
+                              onClick={() => setIsSandboxConsoleExpanded(true)}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 text-white/55 hover:text-white hover:bg-white/10 transition-colors text-[9px] font-mono font-bold uppercase"
+                              title="Show Console"
+                            >
+                              <Eye className="w-3 h-3" />
+                              Show Console
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {sandboxPreviewPanelCount > 0 && (
+                      <div className={cn("flex-1 grid min-h-0", sandboxPreviewGridColumns)}>
+                    <div className={cn(
+                      "min-h-0 min-w-0",
+                      !isSandboxTerminalExpanded && "hidden",
+                      isSandboxTerminalExpanded && isSandboxConsoleExpanded && "border-r border-white/10"
+                    )}>
+                      <Terminal
+                        onExec={sandbox.exec}
+                        disabled={!sandbox.sandboxId}
+                        workDir={sandbox.WORK_DIR}
+                        collapsible
+                        isExpanded={isSandboxTerminalExpanded}
+                        onToggleExpanded={() => setIsSandboxTerminalExpanded(false)}
+                      />
+                    </div>
+                    <ConsolePanel
+                      logs={consoleLogs}
+                      endRef={consoleEndRef}
+                      isDebuggerRunning={isDebuggerRunning}
+                      onRunDebugger={runDebugger}
+                      onClear={() => setConsoleLogs([])}
+                      collapsible
+                      isExpanded={isSandboxConsoleExpanded}
+                      onToggleExpanded={() => setIsSandboxConsoleExpanded(false)}
+                      className={cn(
+                        "min-h-0 min-w-0",
+                        !isSandboxConsoleExpanded && "hidden"
+                      )}
                     />
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : isSandboxPreview && !sandbox.previewUrl ? (
@@ -3896,60 +4073,20 @@ ${context}`;
                     className="flex-1 w-full border-none"
                     srcDoc={getPreviewHtml()}
                   />
-                  {/* Console Preview */}
-                  <div className={cn(
-                    "border-t border-white/10 bg-[#0a0a0a] flex flex-col overflow-hidden transition-all duration-300",
-                    isConsoleExpanded ? "h-1/3" : "h-8"
-                  )}>
-                    <div
-                      className="h-8 border-b border-white/5 flex items-center justify-between px-4 bg-black/50 cursor-pointer hover:bg-black/70 transition-colors"
-                      onClick={() => setIsConsoleExpanded(!isConsoleExpanded)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <TerminalIcon className="w-3 h-3 text-accent" />
-                        <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">Console Output</span>
-                        <ChevronDown className={cn("w-3 h-3 text-white/30 transition-transform duration-300", !isConsoleExpanded && "rotate-180")} />
-                      </div>
-                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                        {consoleLogs.some(l => l.type === 'error') && (
-                          <button
-                            onClick={() => runDebugger()}
-                            disabled={isDebuggerRunning}
-                            className="flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[9px] font-mono font-bold hover:bg-purple-500/30 transition-colors disabled:opacity-50"
-                          >
-                            <Zap className={cn("w-3 h-3", isDebuggerRunning && "animate-pulse")} />
-                            RUN DEBUGGER
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setConsoleLogs([])}
-                          className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white transition-colors"
-                          title="Clear Console"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] custom-scrollbar space-y-1">
-                      {consoleLogs.length === 0 && (
-                        <div className="h-full flex items-center justify-center text-white/20 italic">
-                          No logs yet. Interact with the preview to see output.
-                        </div>
-                      )}
-                      {consoleLogs.map((log, i) => (
-                        <div key={i} className={cn(
-                          "flex gap-2 py-0.5 px-2 rounded",
-                          log.type === 'error' ? "bg-red-500/10 text-red-400" :
-                          log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" :
-                          "text-white/70"
-                        )}>
-                          <span className="opacity-30 shrink-0">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
-                          <span className="break-all">{log.message}</span>
-                        </div>
-                      ))}
-                      <div ref={consoleEndRef} />
-                    </div>
-                  </div>
+                  <ConsolePanel
+                    logs={consoleLogs}
+                    endRef={consoleEndRef}
+                    isDebuggerRunning={isDebuggerRunning}
+                    onRunDebugger={runDebugger}
+                    onClear={() => setConsoleLogs([])}
+                    collapsible
+                    isExpanded={isConsoleExpanded}
+                    onToggleExpanded={() => setIsConsoleExpanded(!isConsoleExpanded)}
+                    className={cn(
+                      "border-t border-white/10 transition-all duration-300",
+                      isConsoleExpanded ? "h-1/3" : "h-8"
+                    )}
+                  />
                 </div>
               )}
             </div>

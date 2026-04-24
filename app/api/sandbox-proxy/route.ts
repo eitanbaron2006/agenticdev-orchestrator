@@ -205,6 +205,71 @@ async function handleProxy(request: Request): Promise<Response> {
   function proxyUrl(path) {
     return PROXY_BASE + encodeURIComponent(path) + PROXY_TOKEN;
   }
+
+  function stringifyConsoleArg(arg) {
+    if (arg instanceof Error) {
+      return arg.stack || arg.message;
+    }
+    if (typeof arg === 'string') {
+      return arg;
+    }
+    try {
+      return JSON.stringify(arg);
+    } catch (error) {
+      return String(arg);
+    }
+  }
+
+  function sendConsoleMessage(type, args) {
+    try {
+      var message = Array.prototype.slice.call(args || [])
+        .map(stringifyConsoleArg)
+        .join(' ');
+      window.parent.postMessage({ type: 'CONSOLE_LOG', payload: { type: type, message: message } }, window.location.origin);
+    } catch (error) {
+      // Keep preview app execution isolated from logging failures.
+    }
+  }
+
+  var originalLog = console.log;
+  var originalInfo = console.info;
+  var originalWarn = console.warn;
+  var originalError = console.error;
+
+  console.log = function() {
+    if (originalLog) originalLog.apply(console, arguments);
+    sendConsoleMessage('log', arguments);
+  };
+  console.info = function() {
+    if (originalInfo) originalInfo.apply(console, arguments);
+    sendConsoleMessage('info', arguments);
+  };
+  console.warn = function() {
+    if (originalWarn) originalWarn.apply(console, arguments);
+    sendConsoleMessage('warn', arguments);
+  };
+  console.error = function() {
+    if (originalError) originalError.apply(console, arguments);
+    sendConsoleMessage('error', arguments);
+  };
+
+  window.addEventListener('error', function(event) {
+    var message = event.message || 'Unknown runtime error';
+    if (event.filename) {
+      message += ' at ' + event.filename + ':' + event.lineno + ':' + event.colno;
+    }
+    if (event.error && event.error.stack) {
+      message += '\\n' + event.error.stack;
+    }
+    sendConsoleMessage('error', [message]);
+  });
+
+  window.addEventListener('unhandledrejection', function(event) {
+    var reason = event.reason instanceof Error
+      ? event.reason.stack || event.reason.message
+      : stringifyConsoleArg(event.reason);
+    sendConsoleMessage('error', ['Unhandled promise rejection: ' + reason]);
+  });
   
   // Override fetch to proxy API calls
   var originalFetch = window.fetch;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
-import { Terminal as TerminalIcon, ChevronRight, Trash2, Loader2 } from 'lucide-react';
+import { Terminal as TerminalIcon, ChevronRight, ChevronDown, Trash2, Loader2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -23,9 +23,19 @@ interface TerminalProps {
   }>;
   disabled?: boolean;
   workDir?: string;
+  collapsible?: boolean;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
 }
 
-const Terminal = memo(({ onExec, disabled = false, workDir = '/home/daytona/project' }: TerminalProps) => {
+const Terminal = memo(({
+  onExec,
+  disabled = false,
+  workDir = '/home/daytona/project',
+  collapsible = false,
+  isExpanded = true,
+  onToggleExpanded,
+}: TerminalProps) => {
   const [lines, setLines] = useState<TerminalLine[]>([
     { id: 0, type: 'system', content: `Terminal ready. Working directory: ${workDir}` },
   ]);
@@ -107,20 +117,33 @@ const Terminal = memo(({ onExec, disabled = false, workDir = '/home/daytona/proj
 
   return (
     <div className="flex flex-col bg-[#0a0a0a] border-t border-white/10 h-full">
-      <div className="h-8 border-b border-white/5 flex items-center justify-between px-3 bg-black/50 shrink-0">
-        <div className="flex items-center gap-2">
+      <div
+        className={cn(
+          "h-8 border-b border-white/5 flex items-center justify-between px-3 bg-black/50 shrink-0",
+          collapsible && "cursor-pointer hover:bg-black/70 transition-colors"
+        )}
+        onClick={collapsible ? onToggleExpanded : undefined}
+      >
+        <div className="flex items-center gap-2 min-w-0">
           <TerminalIcon className="w-3 h-3 text-accent" />
           <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">
             Terminal
           </span>
+          {collapsible && (
+            <ChevronDown className={cn(
+              "w-3 h-3 text-white/30 transition-transform duration-300 shrink-0",
+              !isExpanded && "rotate-180"
+            )} />
+          )}
           {disabled && (
             <span className="text-[9px] font-mono text-yellow-500/70">(No sandbox)</span>
           )}
         </div>
         <button
-          onClick={() =>
+          onClick={(event) => {
+            event.stopPropagation();
             setLines([{ id: lineIdRef.current++, type: 'system', content: 'Terminal cleared.' }])
-          }
+          }}
           className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white transition-colors"
           title="Clear"
         >
@@ -128,49 +151,51 @@ const Terminal = memo(({ onExec, disabled = false, workDir = '/home/daytona/proj
         </button>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-relaxed custom-scrollbar"
-        onClick={() => inputRef.current?.focus()}
-      >
-        {lines.map((line) => (
-          <div
-            key={line.id}
-            className={cn(
-              'whitespace-pre-wrap break-all py-0.5',
-              line.type === 'input' && 'text-accent font-bold',
-              line.type === 'output' && 'text-white/80',
-              line.type === 'error' && 'text-red-400',
-              line.type === 'system' && 'text-white/30 italic'
-            )}
-          >
-            {line.content}
-          </div>
-        ))}
+      {isExpanded && (
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-relaxed custom-scrollbar min-h-0"
+          onClick={() => inputRef.current?.focus()}
+        >
+          {lines.map((line) => (
+            <div
+              key={line.id}
+              className={cn(
+                'whitespace-pre-wrap break-all py-0.5',
+                line.type === 'input' && 'text-accent font-bold',
+                line.type === 'output' && 'text-white/80',
+                line.type === 'error' && 'text-red-400',
+                line.type === 'system' && 'text-white/30 italic'
+              )}
+            >
+              {line.content}
+            </div>
+          ))}
 
-        {isRunning && (
-          <div className="flex items-center gap-2 text-white/30 py-0.5">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span className="text-[10px]">Running...</span>
-          </div>
-        )}
+          {isRunning && (
+            <div className="flex items-center gap-2 text-white/30 py-0.5">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="text-[10px]">Running...</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="flex items-center gap-1 mt-1">
-          <ChevronRight className="w-3 h-3 text-accent shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isRunning || disabled}
-            placeholder={disabled ? 'Create a sandbox first' : 'Type a command...'}
-            className="flex-1 bg-transparent text-white/90 outline-none font-mono text-[11px] placeholder:text-white/20 caret-accent"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </form>
-      </div>
+          <form onSubmit={handleSubmit} className="flex items-center gap-1 mt-1">
+            <ChevronRight className="w-3 h-3 text-accent shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isRunning || disabled}
+              placeholder={disabled ? 'Create a sandbox first' : 'Type a command...'}
+              className="flex-1 bg-transparent text-white/90 outline-none font-mono text-[11px] placeholder:text-white/20 caret-accent"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </form>
+        </div>
+      )}
     </div>
   );
 });

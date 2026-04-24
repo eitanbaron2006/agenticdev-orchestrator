@@ -22,6 +22,47 @@ export interface SandboxState {
 
 const WORK_DIR = '/home/daytona/project';
 const SESSION_KEY = 'daytona_sandbox_id';
+const PREVIEW_PROXY_READY_TIMEOUT_MS = 30000;
+const PREVIEW_PROXY_RETRY_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withPreviewProbe(url: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}preview_probe=${Date.now()}`;
+}
+
+async function waitForPreviewProxy(proxiedUrl: string): Promise<void> {
+  const startedAt = Date.now();
+  let lastStatus: number | null = null;
+  let lastError = '';
+
+  while (Date.now() - startedAt < PREVIEW_PROXY_READY_TIMEOUT_MS) {
+    try {
+      const res = await fetch(withPreviewProbe(proxiedUrl), {
+        cache: 'no-store',
+        headers: { Accept: 'text/html,*/*' },
+      });
+
+      lastStatus = res.status;
+      if (res.status < 500) {
+        return;
+      }
+
+      lastError = (await res.text()).slice(0, 240);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+
+    await sleep(PREVIEW_PROXY_RETRY_MS);
+  }
+
+  const statusText = lastStatus === null ? '' : ` Last status: ${lastStatus}.`;
+  const errorText = lastError ? ` Last error: ${lastError}` : '';
+  throw new Error(`Preview proxy was not ready after 30s.${statusText}${errorText}`);
+}
 
 async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(url, {
@@ -205,6 +246,8 @@ export function useSandbox() {
 
         addLog(`Preview URL (direct): ${directUrl}`);
         addLog(`Preview URL (proxied): ${proxiedUrl}`);
+        addLog('Waiting for preview proxy route...');
+        await waitForPreviewProxy(proxiedUrl);
         setState((s) => ({ ...s, previewUrl: proxiedUrl }));
         return proxiedUrl;
       } catch (err) {
