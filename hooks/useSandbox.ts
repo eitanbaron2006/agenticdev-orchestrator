@@ -371,24 +371,14 @@ export function useSandbox(ownerKey?: string | null) {
     bootstrappedRuntimeRef.current = createEmptyBootstrapPool();
     activeRuntimeRef.current = 'next';
 
-    const restoredPool = createEmptySandboxPool();
-    for (const runtime of RUNTIME_PREWARM_ORDER) {
-      restoredPool[runtime] = readStoredSandboxId(runtime);
-    }
-
-    sandboxPoolRef.current = restoredPool;
-    const restoredRuntime = RUNTIME_PREWARM_ORDER.find((runtime) => restoredPool[runtime]) || 'next';
-    activeRuntimeRef.current = restoredRuntime;
-    const restoredSandboxId = restoredPool[restoredRuntime];
-
     setState({
-      sandboxId: restoredSandboxId,
-      activeRuntime: restoredRuntime,
-      status: restoredSandboxId ? 'ready' : 'idle',
+      sandboxId: null,
+      activeRuntime: 'next',
+      status: 'idle',
       previewUrl: null,
       error: null,
-      logs: restoredSandboxId ? [`Restored reusable sandbox: ${restoredSandboxId}`] : [],
-      pool: buildPoolState(restoredPool, bootstrappedRuntimeRef.current),
+      logs: [],
+      pool: buildPoolState(sandboxPoolRef.current, bootstrappedRuntimeRef.current),
     });
   }, [readStoredSandboxId]);
 

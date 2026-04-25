@@ -51,25 +51,25 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { 
-  auth, 
-  db, 
-  loginWithGoogle, 
-  logout, 
+import {
+  auth,
+  db,
+  loginWithGoogle,
+  logout,
   onAuthStateChanged,
-  type AuthUser 
+  type AuthUser
 } from '@/lib/supabase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  onSnapshot, 
-  updateDoc, 
-  deleteDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  onSnapshot,
+  updateDoc,
+  deleteDoc,
   Timestamp,
   orderBy
 } from '@/lib/supabase-data';
@@ -145,19 +145,19 @@ const buildFileTree = (files: ProjectFile[]): TreeNode => {
   return root;
 };
 
-const FileTreeItem = ({ 
-  node, 
-  level = 0, 
-  selectedFile, 
-  onSelectFile 
-}: { 
-  node: TreeNode; 
-  level?: number; 
-  selectedFile: ProjectFile | null; 
+const FileTreeItem = ({
+  node,
+  level = 0,
+  selectedFile,
+  onSelectFile
+}: {
+  node: TreeNode;
+  level?: number;
+  selectedFile: ProjectFile | null;
   onSelectFile: (file: ProjectFile) => void;
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  
+
   if (node.type === 'file' && node.file) {
     const isSelected = selectedFile?.id === node.file.id;
     return (
@@ -194,12 +194,12 @@ const FileTreeItem = ({
               return a.type === 'folder' ? -1 : 1;
             })
             .map(child => (
-              <FileTreeItem 
-                key={child.path} 
-                node={child} 
-                level={level + 1} 
-                selectedFile={selectedFile} 
-                onSelectFile={onSelectFile} 
+              <FileTreeItem
+                key={child.path}
+                node={child}
+                level={level + 1}
+                selectedFile={selectedFile}
+                onSelectFile={onSelectFile}
               />
             ))}
         </div>
@@ -1147,14 +1147,14 @@ const AGENTS: Agent[] = [
 
 // --- Components ---
 
-const SidebarContent = ({ 
-  projectState, 
-  user, 
-  projects, 
-  currentProject, 
-  onSelectProject, 
-  onNewProject 
-}: { 
+const SidebarContent = ({
+  projectState,
+  user,
+  projects,
+  currentProject,
+  onSelectProject,
+  onNewProject
+}: {
   projectState: ProjectState;
   user: AuthUser | null;
   projects: Project[];
@@ -1178,7 +1178,7 @@ const SidebarContent = ({
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[10px] font-mono opacity-30 uppercase tracking-[0.2em]">Projects</h2>
-            <button 
+            <button
               onClick={onNewProject}
               className="p-1 rounded hover:bg-white/5 text-accent transition-all"
             >
@@ -1192,8 +1192,8 @@ const SidebarContent = ({
                 onClick={() => onSelectProject(p)}
                 className={cn(
                   "w-full flex items-center gap-2 p-2 rounded-lg text-xs font-mono transition-all border",
-                  currentProject?.id === p.id 
-                    ? "bg-accent/10 border-accent/20 text-accent" 
+                  currentProject?.id === p.id
+                    ? "bg-accent/10 border-accent/20 text-accent"
                     : "border-transparent opacity-50 hover:opacity-100 hover:bg-white/5"
                 )}
               >
@@ -1211,16 +1211,16 @@ const SidebarContent = ({
           <h2 className="text-[10px] font-mono opacity-30 uppercase tracking-[0.2em] mb-4">Active Agents</h2>
           <div className="space-y-3">
             {AGENTS.map((agent, idx) => (
-              <div 
+              <div
                 key={agent.id}
                 className={cn(
                   "flex items-center gap-3 p-2 rounded-lg transition-all border",
-                  projectState.currentAgentIndex === idx 
-                    ? "bg-white/5 border-white/10" 
+                  projectState.currentAgentIndex === idx
+                    ? "bg-white/5 border-white/10"
                     : "border-transparent opacity-50"
                 )}
               >
-                <div 
+                <div
                   className="w-8 h-8 rounded-md flex items-center justify-center"
                   style={{ backgroundColor: `${agent.color}15`, color: agent.color }}
                 >
@@ -1231,7 +1231,7 @@ const SidebarContent = ({
                   <p className="text-[10px] font-mono opacity-50 truncate">{agent.role}</p>
                 </div>
                 {projectState.currentAgentIndex === idx && (
-                  <motion.div 
+                  <motion.div
                     animate={{ opacity: [0, 1, 0] }}
                     transition={{ repeat: Infinity, duration: 1.5 }}
                     className="w-1.5 h-1.5 rounded-full bg-accent"
@@ -1258,22 +1258,22 @@ const SidebarContent = ({
 
       {user ? (
         <div className="flex items-center gap-3 p-2 rounded-xl bg-white/5 border border-white/10">
-                    {user.photoURL && (
-                      <Image 
-                        src={user.photoURL} 
-                        alt={user.displayName || 'User'} 
-                        width={32} 
-                        height={32} 
-                        className="rounded-full border border-white/10" 
-                      />
-                    )}
+          {user.photoURL && (
+            <Image
+              src={user.photoURL}
+              alt={user.displayName || 'User'}
+              width={32}
+              height={32}
+              className="rounded-full border border-white/10"
+            />
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-mono font-bold truncate">{user.displayName}</p>
             <button onClick={logout} className="text-[9px] font-mono text-red-400 hover:underline">LOGOUT</button>
           </div>
         </div>
       ) : (
-        <button 
+        <button
           onClick={loginWithGoogle}
           className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-accent text-black font-mono font-bold text-xs hover:scale-[1.02] transition-all"
         >
@@ -1328,7 +1328,7 @@ const FileChangeViewer = memo(({ files }: { files: { path: string, content: stri
                 <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", isExpanded && "rotate-180")} />
               )}
             </button>
-            
+
             {isExpanded && file.type !== 'delete' && (
               <div className="p-4 border-t border-white/10 bg-[#0a0a0a] overflow-x-auto">
                 <pre className="text-[10px] sm:text-xs font-mono text-white/70">
@@ -1354,9 +1354,9 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
 
     const fileRegex = /\[FILE:\s*(.*?)\]([\s\S]*?)\[\/FILE\]/g;
     const deleteRegex = /\[DELETE_FILE:\s*(.*?)\]/g;
-    
+
     const files: { path: string, content: string, type: 'update' | 'delete' }[] = [];
-    
+
     let match;
     while ((match = fileRegex.exec(message.content)) !== null) {
       files.push({ path: match[1].trim(), content: match[2].trim(), type: 'update' });
@@ -1364,17 +1364,17 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
     while ((match = deleteRegex.exec(message.content)) !== null) {
       files.push({ path: match[1].trim(), content: '', type: 'delete' });
     }
-    
+
     let textContent = message.content
       .replace(/\[FILE:\s*(.*?)\]([\s\S]*?)\[\/FILE\]/g, '')
       .replace(/\[DELETE_FILE:\s*(.*?)\]/g, '')
       .trim();
-      
+
     return { textContent, files };
   }, [message.content, isUser]);
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
@@ -1402,10 +1402,10 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
 
       {message.imageUrl && (
         <div className="mb-3 relative w-full max-w-sm aspect-video rounded-lg overflow-hidden border border-white/10">
-          <Image 
-            src={message.imageUrl} 
-            alt="Uploaded context" 
-            fill 
+          <Image
+            src={message.imageUrl}
+            alt="Uploaded context"
+            fill
             className="object-cover"
             referrerPolicy="no-referrer"
           />
@@ -1429,7 +1429,7 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
         </div>
       )}
 
-      <div 
+      <div
         className={cn(
           "prose prose-invert prose-sm max-w-none font-mono text-sm leading-relaxed opacity-90 overflow-x-auto",
           hasHebrew ? "text-right" : "text-left"
@@ -1438,10 +1438,10 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
       >
         <ReactMarkdown
           components={{
-            code: ({node, className, children, ...props}: any) => (
+            code: ({ node, className, children, ...props }: any) => (
               <code dir="ltr" className={cn(className, "inline-block text-left")} {...props}>{children}</code>
             ),
-            pre: ({node, ...props}: any) => <pre dir="ltr" className="text-left" {...props} />
+            pre: ({ node, ...props }: any) => <pre dir="ltr" className="text-left" {...props} />
           }}
         >
           {parsedContent.textContent}
@@ -1458,7 +1458,7 @@ const MessageBubble = memo(({ message, onAction }: { message: Message; onAction?
           <div className="flex-1">
             <p className="text-xs font-mono text-purple-200">I&apos;ve detected errors that I can fix. Should I proceed?</p>
           </div>
-          <button 
+          <button
             onClick={() => onAction?.('runDebugger')}
             className="px-4 py-1.5 bg-purple-500 text-white rounded text-[10px] font-mono font-bold hover:bg-purple-600 transition-all shadow-lg shadow-purple-500/20"
           >
@@ -1562,7 +1562,7 @@ const OrchestrationAccordion = memo(({
                     <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-white/35">Requirement</div>
                     <div className="flex items-center gap-2">
                       {onRestore && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); onRestore(group.id); }}
                           className="text-[10px] font-mono px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-white/60 hover:text-white transition-colors flex items-center gap-1"
                           title="Restore files to the state after this requirement"
@@ -1572,7 +1572,7 @@ const OrchestrationAccordion = memo(({
                         </button>
                       )}
                       {onRetry && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); onRetry(group.request!.content); }}
                           className="text-[10px] font-mono px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-white/60 hover:text-white transition-colors flex items-center gap-1"
                           title="Retry this requirement as a new prompt"
@@ -1632,16 +1632,16 @@ const OrchestrationAccordion = memo(({
 });
 OrchestrationAccordion.displayName = 'OrchestrationAccordion';
 
-const PromptInput = memo(({ 
-  onSubmit, 
-  isProcessing, 
+const PromptInput = memo(({
+  onSubmit,
+  isProcessing,
   currentProject,
   attachments,
   onFileSelect,
   onRemoveAttachment
-}: { 
-  onSubmit: (prompt: string) => void; 
-  isProcessing: boolean; 
+}: {
+  onSubmit: (prompt: string) => void;
+  isProcessing: boolean;
   currentProject: any;
   attachments: Attachment[];
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -1694,7 +1694,7 @@ const PromptInput = memo(({
                   <span className="text-[8px] font-mono text-white/70 truncate w-full">{att.name}</span>
                 </div>
               )}
-              <button 
+              <button
                 onClick={() => onRemoveAttachment(idx)}
                 className="absolute top-1 right-1 p-1 bg-black/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
               >
@@ -1704,57 +1704,57 @@ const PromptInput = memo(({
           ))}
         </div>
       )}
-      <form 
+      <form
         onSubmit={handleSubmit}
         className="relative group"
       >
-          <div className="absolute -inset-1 bg-gradient-to-r from-accent/20 to-blue-500/20 rounded-2xl blur opacity-25 group-focus-within:opacity-100 transition duration-1000 group-hover:duration-200" />
-          <div 
-            className="relative flex items-end bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden shadow-2xl transition-all"
-            dir={direction}
+        <div className="absolute -inset-1 bg-gradient-to-r from-accent/20 to-blue-500/20 rounded-2xl blur opacity-25 group-focus-within:opacity-100 transition duration-1000 group-hover:duration-200" />
+        <div
+          className="relative flex items-end bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden shadow-2xl transition-all"
+          dir={direction}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={onFileSelect}
+            multiple
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-4 md:p-6 hover:text-accent transition-colors shrink-0"
+            title="Attach files"
           >
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              onChange={onFileSelect}
-              multiple
-              className="hidden"
-            />
+            <Paperclip className="w-4 h-4 md:w-5 md:h-5 opacity-30" />
+          </button>
+          <textarea
+            ref={textareaRef}
+            value={localInput}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder={isProcessing ? "Agents are working..." : "Enter project requirements... (Ctrl+Enter to send)"}
+            disabled={isProcessing || !currentProject}
+            className="flex-1 bg-transparent py-4 md:py-6 text-xs md:text-sm font-mono outline-none placeholder:opacity-20 resize-none min-h-[56px] md:min-h-[68px] max-h-[200px] custom-scrollbar"
+            rows={1}
+          />
+          <div className="p-3 md:p-4 shrink-0 flex items-center gap-2">
             <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-4 md:p-6 hover:text-accent transition-colors shrink-0"
-              title="Attach files"
+              type="submit"
+              disabled={isProcessing || !localInput.trim() || !currentProject}
+              className={cn(
+                "w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center transition-all",
+                isProcessing || !localInput.trim() || !currentProject
+                  ? "bg-white/5 opacity-20 cursor-not-allowed"
+                  : "bg-accent text-black hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              )}
+              title="Send (Ctrl+Enter)"
             >
-              <Paperclip className="w-4 h-4 md:w-5 md:h-5 opacity-30" />
+              {isProcessing ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" /> : <Send className={cn("w-4 h-4 md:w-5 md:h-5", isHebrew && "-scale-x-100")} />}
             </button>
-            <textarea 
-              ref={textareaRef}
-              value={localInput}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-              placeholder={isProcessing ? "Agents are working..." : "Enter project requirements... (Ctrl+Enter to send)"}
-              disabled={isProcessing || !currentProject}
-              className="flex-1 bg-transparent py-4 md:py-6 text-xs md:text-sm font-mono outline-none placeholder:opacity-20 resize-none min-h-[56px] md:min-h-[68px] max-h-[200px] custom-scrollbar"
-              rows={1}
-            />
-            <div className="p-3 md:p-4 shrink-0 flex items-center gap-2">
-              <button 
-                type="submit"
-                disabled={isProcessing || !localInput.trim() || !currentProject}
-                className={cn(
-                  "w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center transition-all",
-                  isProcessing || !localInput.trim() || !currentProject
-                    ? "bg-white/5 opacity-20 cursor-not-allowed" 
-                    : "bg-accent text-black hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                )}
-                title="Send (Ctrl+Enter)"
-              >
-                {isProcessing ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" /> : <Send className={cn("w-4 h-4 md:w-5 md:h-5", isHebrew && "-scale-x-100")} />}
-              </button>
-            </div>
           </div>
-        </form>
+        </div>
+      </form>
     </div>
   );
 });
@@ -1839,8 +1839,8 @@ const ConsolePanel = memo(({
             <div key={`${log.timestamp}-${i}`} className={cn(
               "flex gap-2 py-0.5 px-2 rounded",
               log.type === 'error' ? "bg-red-500/10 text-red-400" :
-              log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" :
-              "text-white/70"
+                log.type === 'warn' ? "bg-yellow-500/10 text-yellow-400" :
+                  "text-white/70"
             )}>
               <span className="opacity-30 shrink-0">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
               <span className="break-all whitespace-pre-wrap">{log.message}</span>
@@ -1883,6 +1883,7 @@ export default function AgenticDevPage() {
     currentAgentIndex: -1
   });
   const [previewKey, setPreviewKey] = useState(0);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const [isRefreshingPreview, setIsRefreshingPreview] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([]);
   const [isDebuggerRunning, setIsDebuggerRunning] = useState(false);
@@ -1960,7 +1961,7 @@ export default function AgenticDevPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isRunningTasks, setIsRunningTasks] = useState(false);
-  
+
   // Settings Modal State
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editProjectName, setEditProjectName] = useState('');
@@ -2043,11 +2044,11 @@ export default function AgenticDevPage() {
 
   const isSettingsDirty = Boolean(
     currentProject &&
-      (
-        editProjectName !== currentProject.name ||
-        editProjectDescription !== (currentProject.description || '') ||
-        editAiModel !== currentProjectAiModel
-      )
+    (
+      editProjectName !== currentProject.name ||
+      editProjectDescription !== (currentProject.description || '') ||
+      editAiModel !== currentProjectAiModel
+    )
   );
 
   const startSandboxPreview = useCallback(async (mode: 'manual' | 'auto' = 'manual') => {
@@ -2432,7 +2433,7 @@ export default function AgenticDevPage() {
 
   const triggerDebuggerProposal = useCallback(async () => {
     if (!currentProject) return;
-    
+
     const debuggerMsgId = Date.now().toString() + 'debugger-proposal';
     const debuggerMsg: Message = {
       id: debuggerMsgId,
@@ -2472,8 +2473,8 @@ export default function AgenticDevPage() {
       const time = new Date(e.timestamp).toLocaleTimeString();
       return `[ERROR ${i + 1} @ ${time}]\n${e.message}`;
     }).join('\n\n');
-    
-    const warningDetails = warnings.length > 0 
+
+    const warningDetails = warnings.length > 0
       ? `\n\nWARNINGS (${warnings.length}):\n${warnings.map((w, i) => `[WARN ${i + 1}] ${w.message}`).join('\n')}`
       : '';
 
@@ -2502,7 +2503,7 @@ export default function AgenticDevPage() {
       context += `[${m.role}]: ${getMessagePreview(m.content)}\n\n`;
     });
     context += `Debug Request: ${debuggerPrompt}\n\n`;
-    
+
     if (files.length > 0) {
       context += "Current Project Files:\n";
       files.forEach(f => {
@@ -2625,7 +2626,7 @@ ${context}`;
       const updatedSkills = currentSkills.includes(skillId)
         ? currentSkills.filter(id => id !== skillId)
         : [...currentSkills, skillId];
-      
+
       await updateDoc(doc(db, 'projects', currentProject.id), {
         globalSkills: updatedSkills,
         lastModified: Timestamp.now()
@@ -2642,14 +2643,14 @@ ${context}`;
       if (!agentConfigs[agentId]) {
         agentConfigs[agentId] = { skills: [], creativity: 0.7, focus: 'balanced', tools: [] };
       }
-      
+
       const currentSkills = agentConfigs[agentId].skills || [];
       const updatedSkills = currentSkills.includes(skillId)
         ? currentSkills.filter(id => id !== skillId)
         : [...currentSkills, skillId];
-      
+
       agentConfigs[agentId] = { ...agentConfigs[agentId], skills: updatedSkills };
-      
+
       await updateDoc(doc(db, 'projects', currentProject.id), {
         agentConfigs,
         lastModified: Timestamp.now()
@@ -2687,10 +2688,10 @@ ${context}`;
       'Designer': 'designing',
       'QA': 'reviewing'
     };
-    
+
     const projectType = currentProject.projectType || 'static-site';
     const projectTypeConfig = PROJECT_TYPES[projectType] || PROJECT_TYPES['static-site'];
-    
+
     let context = `PROJECT TYPE: ${projectTypeConfig.name} (ID: ${projectType})\n`;
     context += `PROJECT TYPE RULES: ${projectTypeConfig.agentInstruction}\n`;
     context += `FILE CONVENTION: ${projectTypeConfig.fileConvention}\n\n`;
@@ -2700,7 +2701,7 @@ ${context}`;
       context += `[${m.role}]: ${getMessagePreview(m.content)}\n\n`;
     });
     context += `New User Request: ${userPrompt}\n\n`;
-    
+
     if (files.length > 0) {
       context += "Current Project Files Content:\n";
       files.forEach(f => {
@@ -2719,12 +2720,12 @@ ${context}`;
         ...(currentProject.agentConfigs?.[agent.id]?.skills || [])
       ].map(id => availableSkills.find(s => s.id === id)).filter(Boolean) as Skill[];
 
-      const skillsContext = agentSkills.length > 0 
+      const skillsContext = agentSkills.length > 0
         ? `\nAssigned Skills:\n${agentSkills.map(s => `- ${s.name}: ${s.content}`).join('\n')}`
         : '';
 
       // Detect if user is requesting a completely different project vs modifying existing
-      const existingFilesList = files.length > 0 
+      const existingFilesList = files.length > 0
         ? files.map(f => f.path).join(', ')
         : 'No existing files';
 
@@ -2856,8 +2857,8 @@ ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
       }
 
       // Architect should NOT have FILE OPERATIONS instructions since it does not write files
-      const fileOperationsBlock = agent.role === 'Architect' 
-        ? '' 
+      const fileOperationsBlock = agent.role === 'Architect'
+        ? ''
         : `
 FILE OPERATIONS:
 - Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
@@ -2903,7 +2904,7 @@ ${context}`;
           // Streaming complete — clear the live bubble
           setStreamingMessage(null);
           console.log(`[runOrchestration] ${agent.role} streaming complete: ${content.length} chars (attempt ${attempt})`);
-          
+
           // Validate that the agent didn't try to change project type
           const lowerContent = content.toLowerCase();
           const typeChangeWarnings: string[] = [];
@@ -2913,13 +2914,13 @@ ${context}`;
           if (projectType === 'static-site' && (lowerContent.includes('package.json') || lowerContent.includes('next.config') || lowerContent.includes('npm install'))) {
             typeChangeWarnings.push('Warning: Response appears to add Node.js/bundler files. This is a static site project - use only HTML/CSS/JS.');
           }
-          
+
           if (typeChangeWarnings.length > 0) {
             errorContext = typeChangeWarnings.join('\n');
           } else {
             errorContext = '';
           }
-          
+
           // Only parse and save files for agents that are allowed to output files (not Architect)
           if (agent.role !== 'Architect') {
             console.log(`[runOrchestration] Parsing files from ${agent.role} response (${content.length} chars)...`);
@@ -2965,7 +2966,7 @@ ${context}`;
             timestamp: Timestamp.now()
           };
           await setDoc(doc(db, `projects/${currentProject.id}/messages`, agentMsgId), agentMsg);
-          
+
           context += `[${agent.role}]: ${getMessagePreview(content)}\n\n`;
           agentSucceeded = true;
           break; // Success — exit retry loop
@@ -3016,7 +3017,7 @@ ${context}`;
 
   const handleRestore = useCallback(async (groupId: string) => {
     if (!currentProject) return;
-    
+
     // Find the target group
     const targetGroupIndex = groupedMessages.findIndex(g => g.id === groupId);
     if (targetGroupIndex === -1) return;
@@ -3030,13 +3031,13 @@ ${context}`;
         if (g.request) validMessages.push(g.request);
         validMessages.push(...g.responses);
       }
-      
+
       const virtualFiles = new Map<string, any>(); // path -> content
-      
+
       const fileRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)\[\/FILE\]/g;
       const fallbackRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)(?=\[FILE:\s|\[DELETE_FILE:\s|$)/g;
       const deleteRegex = /\[DELETE_FILE:\s*(.*?)\s*\]/g;
-      
+
       for (const msg of validMessages) {
         let content = msg.content
           .replace(/\*\*\[FILE:/g, '[FILE:')
@@ -3045,22 +3046,22 @@ ${context}`;
           .replace(/`\[FILE:/g, '[FILE:')
           .replace(/`\[\/FILE\]`/g, '[/FILE]')
           .replace(/`\[DELETE_FILE:/g, '[DELETE_FILE:');
-          
+
         let match;
         const fileEntries = [];
-        
+
         // Pass 1
         while ((match = fileRegex.exec(content)) !== null) {
           fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
         }
-        
+
         // Pass 2
         if (fileEntries.length === 0) {
           while ((match = fallbackRegex.exec(content)) !== null) {
             fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
           }
         }
-        
+
         for (const entry of fileEntries) {
           const path = entry.path.replace(/`/g, '');
           let fileContent = entry.rawContent;
@@ -3084,20 +3085,20 @@ ${context}`;
             virtualFiles.set(path, fileContent);
           }
         }
-        
+
         while ((match = deleteRegex.exec(content)) !== null) {
           const path = match[1].trim().replace(/`/g, '');
           virtualFiles.delete(path);
         }
       }
-      
+
       // 1. Delete all current files
       const currentFilesQuery = query(collection(db, `projects/${currentProject.id}/files`));
       const currentFilesSnap = await getDocs(currentFilesQuery);
-      
+
       const deletePromises = currentFilesSnap.docs.map(docSnap => deleteDoc(doc(db, `projects/${currentProject.id}/files`, docSnap.id)));
       await Promise.all(deletePromises);
-      
+
       // 2. Write virtual files
       const createPromises = Array.from(virtualFiles.entries()).map(([path, content]) => {
         const fileId = btoa(path).replace(/=/g, '');
@@ -3112,7 +3113,30 @@ ${context}`;
         });
       });
       await Promise.all(createPromises);
-      
+
+      // 3. Sync editor state (selectedFile/fileContent are local React state and won't
+      // auto-refresh from the Firestore listener; force them to match the restored snapshot).
+      setSelectedFile(prev => {
+        if (!prev) return null;
+        if (virtualFiles.has(prev.path)) {
+          const newContent = virtualFiles.get(prev.path) as string;
+          const newFileId = btoa(prev.path).replace(/=/g, '');
+          const language = prev.path.split('.').pop() || 'plaintext';
+          setFileContent(newContent);
+          return {
+            id: newFileId,
+            projectId: currentProject.id,
+            path: prev.path,
+            content: newContent,
+            language,
+            lastModified: Timestamp.now()
+          } as ProjectFile;
+        }
+        setFileContent('');
+        return null;
+      });
+      setPreviewKey(prev => prev + 1);
+
       const restoreMsgId = Date.now().toString() + 'restore';
       await setDoc(doc(db, `projects/${currentProject.id}/messages`, restoreMsgId), {
         id: restoreMsgId,
@@ -3147,6 +3171,25 @@ ${context}`;
       setFilesLoadedProjectId(null);
     }
   }, [currentProject?.id]);
+
+  // Clear stale preview console logs whenever the project's files actually change
+  // (AI generation, manual save, restore, etc.) so old errors don't linger after a fix.
+  const filesSignature = useMemo(
+    () => files
+      .map(f => {
+        const ts = f.lastModified as { toMillis?: () => number } | undefined;
+        return `${f.id}:${f.content?.length ?? 0}:${ts?.toMillis?.() ?? 0}`;
+      })
+      .join('|'),
+    [files]
+  );
+  const lastFilesSignatureRef = useRef<string>('');
+  useEffect(() => {
+    if (lastFilesSignatureRef.current === filesSignature) return;
+    lastFilesSignatureRef.current = filesSignature;
+    setConsoleLogs([]);
+    lastNotifiedErrorCount.current = 0;
+  }, [filesSignature]);
 
   useEffect(() => {
     if (currentSandboxRuntime) return;
@@ -3242,7 +3285,7 @@ ${context}`;
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const pList = snapshot.docs.map(d => d.data() as Project);
       setProjects(pList);
-      
+
       // Sync current project if it's in the list
       if (currentProject) {
         const updated = pList.find(p => p.id === currentProject.id);
@@ -3264,7 +3307,7 @@ ${context}`;
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const sList = snapshot.docs.map(d => d.data() as Skill);
       setAvailableSkills(sList);
-      
+
       // Seed initial skills if empty
       if (sList.length === 0) {
         const initialSkills: Skill[] = [
@@ -3410,7 +3453,7 @@ ${context}`;
       };
       reader.readAsDataURL(file);
     });
-    
+
     // Reset input
     if (e.target) {
       e.target.value = '';
@@ -3545,7 +3588,7 @@ ${context}`;
   const submitNewProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim() || !user) return;
-    
+
     setIsNewProjectModalOpen(false);
     const name = newProjectName.trim();
     const template = PROJECT_TEMPLATES.find(t => t.id === selectedTemplateId) || PROJECT_TEMPLATES[0];
@@ -3564,7 +3607,7 @@ ${context}`;
 
     try {
       await setDoc(doc(db, 'projects', id), newProject);
-      
+
       // Add template files
       for (const file of template.files) {
         const fileId = btoa(file.path).replace(/=/g, '');
@@ -3604,7 +3647,7 @@ ${context}`;
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim() || !currentProject) return;
-    
+
     const id = Date.now().toString();
     const newTask: Task = {
       id,
@@ -3613,7 +3656,7 @@ ${context}`;
       completed: false,
       createdAt: Timestamp.now()
     };
-    
+
     setNewTaskTitle('');
     try {
       await setDoc(doc(db, `projects/${currentProject.id}/tasks`, id), newTask);
@@ -3723,18 +3766,18 @@ ${context}`;
 
   const updateAgentConfig = async (agentId: string, updates: Partial<AgentConfig>) => {
     if (!currentProject) return;
-    
+
     const currentConfig = currentProject.agentConfigs?.[agentId] || { creativity: 1.0, focus: '', tools: [] };
     const newConfig = { ...currentConfig, ...updates };
-    
+
     const newConfigs = {
       ...(currentProject.agentConfigs || {}),
       [agentId]: newConfig
     };
-    
+
     // Optimistic update
     setCurrentProject({ ...currentProject, agentConfigs: newConfigs });
-    
+
     try {
       await updateDoc(doc(db, 'projects', currentProject.id), {
         agentConfigs: newConfigs,
@@ -3771,7 +3814,7 @@ ${context}`;
   const handlePushToGithub = async () => {
     if (!currentProject || files.length === 0 || !githubToken || !githubRepo || !githubCommitMsg) return;
     setExportStatus({ type: 'loading', message: 'Connecting to GitHub...' });
-    
+
     try {
       const headers = {
         'Authorization': `token ${githubToken}`,
@@ -3792,7 +3835,7 @@ ${context}`;
         headers,
         body: JSON.stringify({ name: githubRepo, private: true, auto_init: true })
       });
-      
+
       // If 422, it might already exist, which is fine. Otherwise check if it's a real error.
       if (!repoRes.ok && repoRes.status !== 422) {
         throw new Error('Failed to create repository');
@@ -3805,14 +3848,14 @@ ${context}`;
       setExportStatus({ type: 'loading', message: 'Preparing files...' });
       const refRes = await fetch(`https://api.github.com/repos/${owner}/${githubRepo}/git/refs/heads/main`, { headers });
       let refData = await refRes.json();
-      
+
       // Fallback to master if main doesn't exist
       if (!refRes.ok) {
         const masterRes = await fetch(`https://api.github.com/repos/${owner}/${githubRepo}/git/refs/heads/master`, { headers });
         if (!masterRes.ok) throw new Error('Could not find main or master branch');
         refData = await masterRes.json();
       }
-      
+
       const latestCommitSha = refData.object.sha;
       const branchRef = refData.ref;
 
@@ -3875,7 +3918,7 @@ ${context}`;
   const getPreviewHtml = () => {
     const projectType = currentProject?.projectType || 'static-site';
     const projectTypeConfig = PROJECT_TYPES[projectType] || PROJECT_TYPES['static-site'];
-    
+
     const sortedFiles = [...files].sort((a, b) => {
       const timeA = a.lastModified?.toMillis?.() || 0;
       const timeB = b.lastModified?.toMillis?.() || 0;
@@ -3946,16 +3989,16 @@ ${context}`;
         </div>
       </body></html>`;
     }
-    
+
     let html = htmlFile.content;
-    
+
     // Inject CSS
     const cssFiles = files.filter(f => f.path.endsWith('.css') && f.path !== htmlFile!.path);
     let cssInject = '';
     cssFiles.forEach(f => {
       cssInject += `<style>\n${f.content}\n</style>\n`;
     });
-    
+
     // Inject JS
     const jsFiles = files.filter(f => (f.path.endsWith('.js') || f.path.endsWith('.jsx')) && f.path !== htmlFile!.path);
     let jsInject = '';
@@ -3967,7 +4010,7 @@ ${context}`;
 
     const tailwindInject = '<script src="https://cdn.tailwindcss.com"></script>';
     const headInject = `${tailwindInject}\n${consoleCaptureScript}\n${cssInject}`;
-    
+
     if (html.includes('</head>')) {
       html = html.replace('</head>', `${headInject}</head>`);
     } else if (html.includes('<body>')) {
@@ -3975,13 +4018,13 @@ ${context}`;
     } else {
       html = `<head>${headInject}</head>${html}`;
     }
-    
+
     if (html.includes('</body>')) {
       html = html.replace('</body>', `${jsInject}</body>`);
     } else {
       html = `${html}${jsInject}`;
     }
-    
+
     return html;
   };
 
@@ -3990,28 +4033,28 @@ ${context}`;
     const layoutFile = sortedFiles.find(f => f.path === 'app/layout.tsx' || f.path === 'src/app/layout.tsx');
     const packageJson = sortedFiles.find(f => f.path === 'package.json');
     const cssFile = sortedFiles.find(f => f.path === 'app/globals.css' || f.path === 'src/app/globals.css');
-    
+
     let deps: string[] = [];
     if (packageJson) {
       try {
         const pkg = JSON.parse(packageJson.content);
         deps = [...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.devDependencies || {})];
-      } catch {}
+      } catch { }
     }
 
-    const componentFiles = sortedFiles.filter(f => 
+    const componentFiles = sortedFiles.filter(f =>
       f.path.startsWith('components/') || f.path.startsWith('src/components/')
     );
-    const allPages = sortedFiles.filter(f => 
-      (f.path.startsWith('app/') || f.path.startsWith('src/app/')) && 
+    const allPages = sortedFiles.filter(f =>
+      (f.path.startsWith('app/') || f.path.startsWith('src/app/')) &&
       (f.path.endsWith('.tsx') || f.path.endsWith('.ts') || f.path.endsWith('.jsx'))
     );
 
     const fileTreeHtml = sortedFiles.map(f => {
       const ext = f.path.split('.').pop()?.toLowerCase() || '';
-      const color = ['ts','tsx','js','jsx'].includes(ext) ? '#facc15' : 
-                    ext === 'css' ? '#60a5fa' : 
-                    ext === 'json' ? '#4ade80' : '#999';
+      const color = ['ts', 'tsx', 'js', 'jsx'].includes(ext) ? '#facc15' :
+        ext === 'css' ? '#60a5fa' :
+          ext === 'json' ? '#4ade80' : '#999';
       return `<div style="padding:2px 0; padding-left:${(f.path.split('/').length - 1) * 16 + 8}px;">
         <span style="color:${color};">●</span> ${f.path}
       </div>`;
@@ -4130,12 +4173,12 @@ ${context}`;
 
   const generateApiDocsPreview = (sortedFiles: ProjectFile[], config: ProjectTypeConfig, consoleCaptureScript: string) => {
     const escapeHtml = (str: string) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    
+
     const fileTreeHtml = sortedFiles.map(f => {
       const ext = f.path.split('.').pop()?.toLowerCase() || '';
-      const color = ['ts','js','py'].includes(ext) ? '#facc15' : 
-                    ext === 'json' ? '#4ade80' : 
-                    ext === 'html' ? '#f97316' : '#999';
+      const color = ['ts', 'js', 'py'].includes(ext) ? '#facc15' :
+        ext === 'json' ? '#4ade80' :
+          ext === 'html' ? '#f97316' : '#999';
       return `<div style="padding:2px 0; padding-left:${(f.path.split('/').length - 1) * 16 + 8}px;">
         <span style="color:${color};">●</span> ${f.path}
       </div>`;
@@ -4191,9 +4234,9 @@ ${context}`;
     <div className="flex h-screen overflow-hidden bg-[#050505]">
       {/* Desktop Sidebar */}
       <aside className="w-72 border-r border-white/5 flex flex-col bg-[#080808] hidden lg:flex">
-        <SidebarContent 
-          projectState={projectState} 
-          user={user} 
+        <SidebarContent
+          projectState={projectState}
+          user={user}
           projects={projects}
           currentProject={currentProject}
           onSelectProject={setCurrentProject}
@@ -4205,14 +4248,14 @@ ${context}`;
       <AnimatePresence>
         {isSidebarOpen && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
             />
-            <motion.aside 
+            <motion.aside
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
@@ -4224,9 +4267,9 @@ ${context}`;
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <SidebarContent 
-                projectState={projectState} 
-                user={user} 
+              <SidebarContent
+                projectState={projectState}
+                user={user}
                 projects={projects}
                 currentProject={currentProject}
                 onSelectProject={(p) => { setCurrentProject(p); setIsSidebarOpen(false); }}
@@ -4242,7 +4285,7 @@ ${context}`;
         {/* Header */}
         <header className="h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-8 bg-[#050505]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(true)}
               className="lg:hidden p-2 rounded-md bg-white/5 border border-white/10"
             >
@@ -4286,7 +4329,7 @@ ${context}`;
           </div>
 
           <div className="flex items-center gap-1 bg-white/5 p-1 rounded-lg border border-white/10">
-            <button 
+            <button
               onClick={() => setActiveTab('chat')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-2",
@@ -4296,7 +4339,7 @@ ${context}`;
               <TerminalIcon className="w-3 h-3" />
               <span className="hidden sm:inline">ORCHESTRATOR</span>
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('files')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-2",
@@ -4306,7 +4349,7 @@ ${context}`;
               <FileCode className="w-3 h-3" />
               <span className="hidden sm:inline">FILES</span>
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('preview')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-2",
@@ -4316,7 +4359,7 @@ ${context}`;
               <Eye className="w-3 h-3" />
               <span className="hidden sm:inline">PREVIEW</span>
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('tasks')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-2",
@@ -4326,7 +4369,7 @@ ${context}`;
               <CheckCircle2 className="w-3 h-3" />
               <span className="hidden sm:inline">TASKS</span>
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('agents')}
               className={cn(
                 "px-3 py-1.5 rounded-md text-[10px] font-mono transition-all flex items-center gap-2",
@@ -4343,7 +4386,7 @@ ${context}`;
         <div className="flex-1 overflow-hidden flex">
           {activeTab === 'chat' && (
             <div className="flex-1 flex flex-col relative overflow-hidden">
-              <div 
+              <div
                 ref={scrollRef}
                 onScroll={handleChatScroll}
                 className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth pb-8 custom-scrollbar"
@@ -4358,7 +4401,7 @@ ${context}`;
                         {currentProject ? `Ready to Build: ${currentProject.name}` : 'Initialize New Project'}
                       </h2>
                       <p className="text-xs md:text-sm font-mono opacity-40 leading-relaxed px-4">
-                        {currentProject 
+                        {currentProject
                           ? "Describe the feature or logic you want to implement. The team will generate the necessary files."
                           : "Select a project from the sidebar or create a new one to start orchestrating."}
                       </p>
@@ -4406,7 +4449,7 @@ ${context}`;
                     </motion.button>
                   )}
                 </AnimatePresence>
-                <PromptInput 
+                <PromptInput
                   onSubmit={runOrchestration}
                   isProcessing={isProcessing}
                   currentProject={currentProject}
@@ -4428,10 +4471,10 @@ ${context}`;
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                   {files.length > 0 ? (
-                    <FileTreeItem 
-                      node={buildFileTree(files)} 
-                      selectedFile={selectedFile} 
-                      onSelectFile={(f) => { setSelectedFile(f); setFileContent(f.content); }} 
+                    <FileTreeItem
+                      node={buildFileTree(files)}
+                      selectedFile={selectedFile}
+                      onSelectFile={(f) => { setSelectedFile(f); setFileContent(f.content); }}
                     />
                   ) : (
                     <p className="text-[10px] font-mono opacity-20 text-center py-8 italic">No files generated yet</p>
@@ -4445,7 +4488,7 @@ ${context}`;
                   <>
                     <div className="h-10 border-b border-white/5 flex items-center justify-between px-4 bg-[#080808]">
                       <span className="text-[10px] font-mono opacity-50">{selectedFile.path}</span>
-                      <button 
+                      <button
                         onClick={saveFile}
                         className="flex items-center gap-2 px-3 py-1 rounded bg-accent/10 text-accent text-[10px] font-mono hover:bg-accent/20 transition-all"
                       >
@@ -4453,7 +4496,7 @@ ${context}`;
                         <span>SAVE</span>
                       </button>
                     </div>
-                    <textarea 
+                    <textarea
                       value={fileContent}
                       onChange={(e) => setFileContent(e.target.value)}
                       className="flex-1 p-6 bg-transparent font-mono text-sm outline-none resize-none leading-relaxed text-[#ededed]/80 overflow-y-auto custom-scrollbar"
@@ -4511,14 +4554,14 @@ ${context}`;
                         )}
                         <span className="text-[9px] font-mono font-bold uppercase">
                           {sandbox.status === 'creating' ? 'Creating...' :
-                           sandbox.status === 'restoring' ? 'Restoring...' :
-                           sandbox.status === 'preparing' ? 'Preparing...' :
-                           sandbox.status === 'syncing' ? 'Syncing...' :
-                           sandbox.status === 'installing' ? 'Installing...' :
-                           sandbox.status === 'starting' ? 'Starting...' :
-                           sandbox.status === 'stopping' ? 'Stopping...' :
-                           sandbox.sandboxId ? 'Start Preview' :
-                           'Start Sandbox'}
+                            sandbox.status === 'restoring' ? 'Restoring...' :
+                              sandbox.status === 'preparing' ? 'Preparing...' :
+                                sandbox.status === 'syncing' ? 'Syncing...' :
+                                  sandbox.status === 'installing' ? 'Installing...' :
+                                    sandbox.status === 'starting' ? 'Starting...' :
+                                      sandbox.status === 'stopping' ? 'Stopping...' :
+                                        sandbox.sandboxId ? 'Start Preview' :
+                                          'Start Sandbox'}
                         </span>
                       </button>
                     ) : (
@@ -4648,34 +4691,34 @@ ${context}`;
                     )}
                     {sandboxPreviewPanelCount > 0 && (
                       <div className={cn("flex-1 grid min-h-0", sandboxPreviewGridColumns)}>
-                    <div className={cn(
-                      "min-h-0 min-w-0",
-                      !isSandboxTerminalExpanded && "hidden",
-                      isSandboxTerminalExpanded && isSandboxConsoleExpanded && "border-r border-white/10"
-                    )}>
-                      <Terminal
-                        onExec={sandbox.exec}
-                        disabled={!sandbox.sandboxId}
-                        workDir={sandbox.WORK_DIR}
-                        collapsible
-                        isExpanded={isSandboxTerminalExpanded}
-                        onToggleExpanded={() => setIsSandboxTerminalExpanded(false)}
-                      />
-                    </div>
-                    <ConsolePanel
-                      logs={consoleLogs}
-                      endRef={consoleEndRef}
-                      isDebuggerRunning={isDebuggerRunning}
-                      onRunDebugger={runDebugger}
-                      onClear={() => setConsoleLogs([])}
-                      collapsible
-                      isExpanded={isSandboxConsoleExpanded}
-                      onToggleExpanded={() => setIsSandboxConsoleExpanded(false)}
-                      className={cn(
-                        "min-h-0 min-w-0",
-                        !isSandboxConsoleExpanded && "hidden"
-                      )}
-                    />
+                        <div className={cn(
+                          "min-h-0 min-w-0",
+                          !isSandboxTerminalExpanded && "hidden",
+                          isSandboxTerminalExpanded && isSandboxConsoleExpanded && "border-r border-white/10"
+                        )}>
+                          <Terminal
+                            onExec={sandbox.exec}
+                            disabled={!sandbox.sandboxId}
+                            workDir={sandbox.WORK_DIR}
+                            collapsible
+                            isExpanded={isSandboxTerminalExpanded}
+                            onToggleExpanded={() => setIsSandboxTerminalExpanded(false)}
+                          />
+                        </div>
+                        <ConsolePanel
+                          logs={consoleLogs}
+                          endRef={consoleEndRef}
+                          isDebuggerRunning={isDebuggerRunning}
+                          onRunDebugger={runDebugger}
+                          onClear={() => setConsoleLogs([])}
+                          collapsible
+                          isExpanded={isSandboxConsoleExpanded}
+                          onToggleExpanded={() => setIsSandboxConsoleExpanded(false)}
+                          className={cn(
+                            "min-h-0 min-w-0",
+                            !isSandboxConsoleExpanded && "hidden"
+                          )}
+                        />
                       </div>
                     )}
                   </div>
@@ -4707,9 +4750,9 @@ ${context}`;
                         <div key={i} className={cn(
                           "font-mono text-[10px] py-0.5 whitespace-pre-wrap break-all",
                           log.startsWith('ERROR') ? 'text-red-400' :
-                          log.startsWith('$') ? 'text-accent' :
-                          log.startsWith('stderr') ? 'text-yellow-400' :
-                          'text-white/50'
+                            log.startsWith('$') ? 'text-accent' :
+                              log.startsWith('stderr') ? 'text-yellow-400' :
+                                'text-white/50'
                         )}>
                           {log}
                         </div>
@@ -4727,9 +4770,20 @@ ${context}`;
               ) : (
                 <div className="flex-1 flex flex-col min-h-0">
                   <iframe
+                    ref={previewIframeRef}
                     key={previewKey}
                     className="flex-1 w-full border-none"
                     srcDoc={getPreviewHtml()}
+                    tabIndex={0}
+                    onLoad={() => {
+                      try { previewIframeRef.current?.contentWindow?.focus(); } catch { }
+                    }}
+                    onMouseEnter={() => {
+                      try { previewIframeRef.current?.contentWindow?.focus(); } catch { }
+                    }}
+                    onMouseDown={() => {
+                      try { previewIframeRef.current?.contentWindow?.focus(); } catch { }
+                    }}
                   />
                   <ConsolePanel
                     logs={consoleLogs}
@@ -4807,18 +4861,18 @@ ${context}`;
               {/* Task Input & List */}
               <div className="px-4 md:px-8 lg:px-12 py-6 space-y-6">
                 {/* Add Task Form */}
-                <form 
+                <form
                   onSubmit={handleAddTask}
                   className="flex items-center gap-3 bg-[#080808] border border-white/10 rounded-xl p-2 focus-within:border-accent/50 transition-colors max-w-3xl"
                 >
-                  <input 
+                  <input
                     type="text"
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
                     placeholder="Add a new task..."
                     className="flex-1 bg-transparent border-none outline-none text-sm font-mono px-3 py-2 placeholder:opacity-30"
                   />
-                  <button 
+                  <button
                     type="submit"
                     disabled={!newTaskTitle.trim() || !currentProject}
                     className="p-2.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -4830,35 +4884,35 @@ ${context}`;
                 {/* Task List */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                   {tasks.map(task => (
-                    <div 
+                    <div
                       key={task.id}
                       className={cn(
                         "group flex items-center justify-between p-4 rounded-xl border transition-all",
-                        task.completed 
-                          ? "bg-white/[0.02] border-white/5 opacity-60" 
+                        task.completed
+                          ? "bg-white/[0.02] border-white/5 opacity-60"
                           : "bg-[#080808] border-white/10 hover:border-white/20 hover:bg-white/[0.02]",
                         selectedTaskIds.has(task.id) && "border-accent/50 bg-accent/5"
                       )}
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <button 
+                        <button
                           onClick={() => toggleTaskSelection(task.id)}
                           className={cn(
                             "w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0",
                             selectedTaskIds.has(task.id)
-                              ? "bg-accent border-accent text-black" 
+                              ? "bg-accent border-accent text-black"
                               : "border-white/20 hover:border-accent/50"
                           )}
                         >
                           {selectedTaskIds.has(task.id) && <CheckCircle2 className="w-3 h-3" />}
                         </button>
-                        
-                        <button 
+
+                        <button
                           onClick={() => toggleTask(task)}
                           className={cn(
                             "w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0",
-                            task.completed 
-                              ? "bg-green-500 border-green-500 text-white" 
+                            task.completed
+                              ? "bg-green-500 border-green-500 text-white"
                               : "border-white/20 hover:border-green-500/50"
                           )}
                         >
@@ -4884,10 +4938,10 @@ ${context}`;
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-1 shrink-0">
                         {!task.completed && (
-                          <button 
+                          <button
                             onClick={() => runTasks([task])}
                             disabled={isRunningTasks}
                             className="p-2 rounded-lg text-accent hover:bg-accent/10 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
@@ -4896,7 +4950,7 @@ ${context}`;
                             <Play className="w-4 h-4 fill-current" />
                           </button>
                         )}
-                        <button 
+                        <button
                           onClick={() => deleteTask(task.id)}
                           className="p-2 rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
                         >
@@ -4948,12 +5002,12 @@ ${context}`;
                     const config = currentProject?.agentConfigs?.[agent.id] || { creativity: 1.0, focus: '', tools: [] };
                     const isActive = projectState.currentAgentIndex === AGENTS.indexOf(agent);
                     return (
-                      <div 
-                        key={agent.id} 
+                      <div
+                        key={agent.id}
                         className={cn(
                           "group rounded-xl border transition-all duration-200 overflow-hidden",
-                          isActive 
-                            ? "bg-white/[0.06] border-white/20 shadow-lg shadow-white/5" 
+                          isActive
+                            ? "bg-white/[0.06] border-white/20 shadow-lg shadow-white/5"
                             : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
                         )}
                       >
@@ -4961,8 +5015,8 @@ ${context}`;
                         <div className="p-5 border-b border-white/5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div 
-                                className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110" 
+                              <div
+                                className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
                                 style={{ backgroundColor: `${agent.color}20`, color: agent.color, border: `1px solid ${agent.color}40` }}
                               >
                                 {agent.icon}
@@ -4973,7 +5027,7 @@ ${context}`;
                               </div>
                             </div>
                             {isActive && (
-                              <motion.div 
+                              <motion.div
                                 animate={{ opacity: [0.5, 1, 0.5] }}
                                 transition={{ repeat: Infinity, duration: 1.5 }}
                                 className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-accent/10 border border-accent/20"
@@ -4994,9 +5048,9 @@ ${context}`;
                               <span>Creativity (Temperature)</span>
                               <span className="px-2 py-0.5 rounded bg-white/5 text-accent">{config.creativity.toFixed(1)}</span>
                             </label>
-                            <input 
-                              type="range" 
-                              min="0" max="2" step="0.1" 
+                            <input
+                              type="range"
+                              min="0" max="2" step="0.1"
                               value={config.creativity}
                               onChange={(e) => updateAgentConfig(agent.id, { creativity: parseFloat(e.target.value) })}
                               className="w-full accent-accent h-1.5 rounded-full appearance-none bg-white/10 cursor-pointer"
@@ -5006,11 +5060,11 @@ ${context}`;
                               <span className="text-[9px] font-mono opacity-30">Creative</span>
                             </div>
                           </div>
-                          
+
                           {/* Custom Instructions */}
                           <div>
                             <label className="block text-xs font-mono opacity-70 mb-2">Primary Focus / Custom Instructions</label>
-                            <textarea 
+                            <textarea
                               value={config.focus}
                               onChange={(e) => updateAgentConfig(agent.id, { focus: e.target.value })}
                               placeholder="E.g., Focus on accessibility, use functional components..."
@@ -5024,16 +5078,16 @@ ${context}`;
                             <div className="grid grid-cols-2 gap-2">
                               <label className={cn(
                                 "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
-                                config.tools.includes('googleSearch') 
-                                  ? "bg-accent/10 border-accent/30 text-accent" 
+                                config.tools.includes('googleSearch')
+                                  ? "bg-accent/10 border-accent/30 text-accent"
                                   : "bg-white/[0.02] border-white/10 hover:border-white/20"
                               )}>
-                                <input 
-                                  type="checkbox" 
+                                <input
+                                  type="checkbox"
                                   checked={config.tools.includes('googleSearch')}
                                   onChange={(e) => {
-                                    const newTools = e.target.checked 
-                                      ? [...config.tools, 'googleSearch'] 
+                                    const newTools = e.target.checked
+                                      ? [...config.tools, 'googleSearch']
                                       : config.tools.filter(t => t !== 'googleSearch');
                                     updateAgentConfig(agent.id, { tools: newTools });
                                   }}
@@ -5043,16 +5097,16 @@ ${context}`;
                               </label>
                               <label className={cn(
                                 "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all",
-                                config.tools.includes('codeExecution') 
-                                  ? "bg-accent/10 border-accent/30 text-accent" 
+                                config.tools.includes('codeExecution')
+                                  ? "bg-accent/10 border-accent/30 text-accent"
                                   : "bg-white/[0.02] border-white/10 hover:border-white/20"
                               )}>
-                                <input 
-                                  type="checkbox" 
+                                <input
+                                  type="checkbox"
                                   checked={config.tools.includes('codeExecution')}
                                   onChange={(e) => {
-                                    const newTools = e.target.checked 
-                                      ? [...config.tools, 'codeExecution'] 
+                                    const newTools = e.target.checked
+                                      ? [...config.tools, 'codeExecution']
                                       : config.tools.filter(t => t !== 'codeExecution');
                                     updateAgentConfig(agent.id, { tools: newTools });
                                   }}
@@ -5067,7 +5121,7 @@ ${context}`;
                           <div>
                             <div className="flex items-center justify-between mb-3">
                               <label className="block text-xs font-mono opacity-70">Agent Skills</label>
-                              <button 
+                              <button
                                 onClick={() => {
                                   setEditingAgentId(agent.id);
                                   setIsSkillLibraryOpen(true);
@@ -5131,7 +5185,7 @@ ${context}`;
                       autoFocus
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-[10px] font-mono uppercase tracking-widest opacity-50 mb-2">Select Template</label>
                     <div className="grid grid-cols-1 gap-2">
@@ -5142,8 +5196,8 @@ ${context}`;
                           onClick={() => setSelectedTemplateId(template.id)}
                           className={cn(
                             "flex items-center gap-3 p-3 rounded-xl border text-left transition-all",
-                            selectedTemplateId === template.id 
-                              ? "bg-accent/10 border-accent/50 text-accent" 
+                            selectedTemplateId === template.id
+                              ? "bg-accent/10 border-accent/50 text-accent"
                               : "bg-white/5 border-white/10 opacity-60 hover:opacity-100 hover:bg-white/10"
                           )}
                         >
@@ -5207,7 +5261,7 @@ ${context}`;
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              
+
               <div className="flex gap-2 mb-6 p-1 bg-white/5 rounded-lg">
                 <button
                   onClick={() => setExportTab('download')}
@@ -5235,8 +5289,8 @@ ${context}`;
                 <div className={cn(
                   "p-3 rounded-lg mb-6 text-xs font-mono flex items-center gap-2",
                   exportStatus.type === 'loading' ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" :
-                  exportStatus.type === 'success' ? "bg-green-500/10 text-green-400 border border-green-500/20" :
-                  "bg-red-500/10 text-red-400 border border-red-500/20"
+                    exportStatus.type === 'success' ? "bg-green-500/10 text-green-400 border border-green-500/20" :
+                      "bg-red-500/10 text-red-400 border border-red-500/20"
                 )}>
                   {exportStatus.type === 'loading' && <Loader2 className="w-3 h-3 animate-spin" />}
                   {exportStatus.type === 'success' && <CheckCircle2 className="w-3 h-3" />}
@@ -5342,7 +5396,7 @@ ${context}`;
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              
+
               {!isDeleteConfirmOpen ? (
                 <form onSubmit={handleUpdateProject}>
                   <div className="space-y-4 mb-6">
@@ -5434,7 +5488,7 @@ ${context}`;
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-[10px] font-mono uppercase tracking-widest opacity-50">Global Skills</label>
-                        <button 
+                        <button
                           type="button"
                           onClick={() => {
                             setEditingAgentId(null);
@@ -5464,7 +5518,7 @@ ${context}`;
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between pt-4 border-t border-white/10">
                     <button
                       type="button"
@@ -5553,7 +5607,7 @@ ${context}`;
                     {importingSkills ? 'IMPORTING...' : 'IMPORT FROM LIBRARY'}
                   </button>
                   <div className="flex bg-black/50 border border-white/10 rounded-lg p-1">
-                    <button 
+                    <button
                       onClick={() => setSkillFilter('all')}
                       className={cn(
                         "px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all",
@@ -5562,7 +5616,7 @@ ${context}`;
                     >
                       ALL SKILLS
                     </button>
-                    <button 
+                    <button
                       onClick={() => setSkillFilter('project')}
                       className={cn(
                         "px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all",
@@ -5573,7 +5627,7 @@ ${context}`;
                     </button>
                   </div>
                   <div className="relative">
-                    <input 
+                    <input
                       type="text"
                       placeholder="Search skills..."
                       value={skillSearchQuery}
@@ -5586,7 +5640,7 @@ ${context}`;
                   </button>
                 </div>
               </div>
-              
+
               <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 {/* Category filter bar */}
                 <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-white/5">
@@ -5613,19 +5667,19 @@ ${context}`;
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                   {availableSkills
                     .filter(s => {
-                      const matchesSearch = s.name.toLowerCase().includes(skillSearchQuery.toLowerCase()) || 
+                      const matchesSearch = s.name.toLowerCase().includes(skillSearchQuery.toLowerCase()) ||
                         s.description.toLowerCase().includes(skillSearchQuery.toLowerCase()) ||
                         s.category.toLowerCase().includes(skillSearchQuery.toLowerCase());
-                      
+
                       const matchesFilter = skillFilter === 'all' || (currentProject?.downloadedSkills || []).includes(s.id);
-                      
+
                       const matchesCategory = categoryFilter === 'all' || s.category === categoryFilter;
-                      
+
                       return matchesSearch && matchesFilter && matchesCategory;
                     })
                     .map(skill => {
                       const isDownloaded = (currentProject?.downloadedSkills || []).includes(skill.id);
-                      const isAssigned = editingAgentId 
+                      const isAssigned = editingAgentId
                         ? (currentProject?.agentConfigs?.[editingAgentId]?.skills || []).includes(skill.id)
                         : (currentProject?.globalSkills || []).includes(skill.id);
 
@@ -5653,7 +5707,7 @@ ${context}`;
                           <div className="pt-3 border-t border-white/5 flex items-center justify-between">
                             <div className="flex gap-2">
                               {!isDownloaded ? (
-                                <button 
+                                <button
                                   onClick={() => downloadSkill(skill.id)}
                                   className="px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold bg-accent text-black hover:bg-accent/90 transition-all flex items-center gap-2"
                                 >
@@ -5661,7 +5715,7 @@ ${context}`;
                                   DOWNLOAD
                                 </button>
                               ) : (
-                                <button 
+                                <button
                                   onClick={() => {
                                     if (editingAgentId) {
                                       toggleAgentSkill(editingAgentId, skill.id);
