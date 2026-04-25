@@ -3199,7 +3199,7 @@ ${context}`;
   }, []);
 
   useEffect(() => {
-    if (view !== 'app' || !user?.uid) return;
+    if (!user?.uid) return;
     if (prewarmedSandboxUserRef.current === user.uid) return;
 
     prewarmedSandboxUserRef.current = user.uid;
@@ -3207,7 +3207,7 @@ ${context}`;
       prewarmedSandboxUserRef.current = null;
       console.warn('[Sandbox] Prewarm failed:', err);
     });
-  }, [prewarmSandboxes, user?.uid, view]);
+  }, [prewarmSandboxes, user?.uid]);
 
   // Auth Listener
   useEffect(() => {
