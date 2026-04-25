@@ -4,8 +4,10 @@ import path from 'node:path';
 
 const pagePath = path.resolve('app/page.tsx');
 const hookPath = path.resolve('hooks/useSandbox.ts');
+const execRoutePath = path.resolve('app/api/daytona/exec/route.ts');
 const source = fs.readFileSync(pagePath, 'utf8');
 const hookSource = fs.readFileSync(hookPath, 'utf8');
+const execRouteSource = fs.readFileSync(execRoutePath, 'utf8');
 
 const titleIndex = source.indexOf('title="Refresh Preview"');
 assert.notEqual(titleIndex, -1, 'Refresh Preview button should be present');
@@ -42,4 +44,15 @@ assert.notEqual(setPreviewIndex, -1, 'getPreviewUrl should store the proxied pre
 assert.ok(
   waitCallIndex < setPreviewIndex,
   'getPreviewUrl should wait for the proxy before exposing the URL to the iframe'
+);
+
+assert.match(
+  execRouteSource,
+  /token:\s*preview\.token\s*\?\?\s*null/,
+  'Preview API should return the Daytona signed preview token so the same-origin proxy can authenticate'
+);
+assert.doesNotMatch(
+  execRouteSource,
+  /token:\s*null/,
+  'Preview API should not discard the Daytona signed preview token'
 );

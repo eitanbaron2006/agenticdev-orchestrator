@@ -31,6 +31,18 @@ assert.match(
   'Sandbox proxy should forward unhandled promise rejections'
 );
 
+const jsRewriteIndex = proxySource.indexOf('// For JS responses: rewrite absolute URL references');
+assert.notEqual(jsRewriteIndex, -1, 'Sandbox proxy should rewrite JavaScript absolute URL references');
+const jsRewriteSource = proxySource.slice(
+  jsRewriteIndex,
+  proxySource.indexOf('// For all other content types', jsRewriteIndex)
+);
+assert.match(
+  jsRewriteSource,
+  /tokenParam/,
+  'Sandbox proxy should keep the Daytona preview token when rewriting JavaScript fetch calls'
+);
+
 const sandboxPreviewIndex = pageSource.indexOf('isSandboxPreview && sandbox.previewUrl');
 assert.notEqual(sandboxPreviewIndex, -1, 'Sandbox preview branch should exist');
 

@@ -25,6 +25,9 @@ const DEFAULT_NEXT_TSCONFIG = {
   exclude: ['node_modules'],
 };
 
+const NEXT_DEV_ALLOWED_ORIGINS = "['*.proxy.localhost', 'proxy.localhost', 'localhost', '127.0.0.1']";
+const LEADING_PROMPT_PLACEHOLDER_LINE = /^\s*(?:FULL_CONTENT|FULL_FILE_CONTENT)\s*;?\s*(?:\r?\n|$)/;
+
 function isValidJson(content: string): boolean {
   try {
     JSON.parse(content);
@@ -34,18 +37,70 @@ function isValidJson(content: string): boolean {
   }
 }
 
+export function stripFileContentPlaceholders(content: string): string {
+  let cleaned = content;
+  while (LEADING_PROMPT_PLACEHOLDER_LINE.test(cleaned)) {
+    cleaned = cleaned.replace(LEADING_PROMPT_PLACEHOLDER_LINE, '');
+  }
+  return cleaned;
+}
+
+function isNextConfigPath(path: string): boolean {
+  return /^next\.config\.(?:js|mjs|cjs|ts)$/i.test(path.replace(/\\/g, '/').toLowerCase());
+}
+
+function normalizeNextConfig(content: string): string {
+  if (content.includes('allowedDevOrigins')) {
+    return content;
+  }
+
+  const nextConfigDeclaration = /const\s+nextConfig(?:\s*:\s*[^=]+)?\s*=\s*\{/;
+  if (nextConfigDeclaration.test(content)) {
+    return content.replace(
+      nextConfigDeclaration,
+      (match) => `${match}\n  allowedDevOrigins: ${NEXT_DEV_ALLOWED_ORIGINS},`
+    );
+  }
+
+  const moduleExportsObject = /module\.exports\s*=\s*\{/;
+  if (moduleExportsObject.test(content)) {
+    return content.replace(
+      moduleExportsObject,
+      (match) => `${match}\n  allowedDevOrigins: ${NEXT_DEV_ALLOWED_ORIGINS},`
+    );
+  }
+
+  const exportDefaultObject = /export\s+default\s+\{/;
+  if (exportDefaultObject.test(content)) {
+    return content.replace(
+      exportDefaultObject,
+      (match) => `${match}\n  allowedDevOrigins: ${NEXT_DEV_ALLOWED_ORIGINS},`
+    );
+  }
+
+  return content;
+}
+
 export function normalizeSandboxFiles<T extends SandboxTextFile>(files: T[]): T[] {
   return files.map((file) => {
-    if (file.path.replace(/\\/g, '/').toLowerCase() !== 'tsconfig.json') {
-      return file;
+    const content = stripFileContentPlaceholders(file.content);
+    const cleanedFile = content === file.content ? file : { ...file, content };
+
+    if (isNextConfigPath(cleanedFile.path)) {
+      const nextConfigContent = normalizeNextConfig(cleanedFile.content);
+      return nextConfigContent === cleanedFile.content ? cleanedFile : { ...cleanedFile, content: nextConfigContent };
     }
 
-    if (isValidJson(file.content)) {
-      return file;
+    if (cleanedFile.path.replace(/\\/g, '/').toLowerCase() !== 'tsconfig.json') {
+      return cleanedFile;
+    }
+
+    if (isValidJson(cleanedFile.content)) {
+      return cleanedFile;
     }
 
     return {
-      ...file,
+      ...cleanedFile,
       content: JSON.stringify(DEFAULT_NEXT_TSCONFIG, null, 2),
     };
   });

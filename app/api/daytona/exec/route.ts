@@ -91,7 +91,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       url: preview.url,
-      token: null,
+      token: preview.token ?? null,
       signed: true,
     });
   } catch (error) {

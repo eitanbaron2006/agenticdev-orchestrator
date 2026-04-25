@@ -336,12 +336,15 @@ async function handleProxy(request: Request): Promise<Response> {
       let js = upstream.body.toString('utf-8');
       const targetUrlObj = new URL(targetUrl);
       const proxyBase = `${targetUrlObj.protocol}//${targetUrlObj.host}`;
+      const tokenParam = previewToken ? `&token=${encodeURIComponent(previewToken)}` : '';
+      const proxyPath = (path: string) =>
+        `/api/sandbox-proxy?url=${encodeURIComponent(`${proxyBase}${path}`)}${tokenParam}`;
 
       // Rewrite common patterns like fetch("/api/...") in JavaScript
       // This is a best-effort approach — handles the most common cases
       js = js.replace(
-        /fetch\(["']\/(?!api\/sandbox-proxy)/g,
-        `fetch("/api/sandbox-proxy?url=${encodeURIComponent(proxyBase)}/`
+        /fetch\((["'])\/(?!api\/sandbox-proxy)([^"']*)\1/g,
+        (_match, quote: string, path: string) => `fetch(${quote}${proxyPath(`/${path}`)}${quote}`
       );
 
       responseHeaders.delete('content-length');

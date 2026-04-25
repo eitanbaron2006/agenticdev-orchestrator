@@ -62,6 +62,7 @@ assert(
 
 const appPortalHook = read('daytona-server/apps/dashboard/src/hooks/queries/useWebhookAppPortalAccessQuery.ts')
 const svixProvider = read('daytona-server/apps/dashboard/src/providers/SvixProvider.tsx').replace(/\s+/g, ' ')
+const runtimePatch = read('scripts/patch-daytona-runtime-console-cleanup.mjs')
 
 assert(
   appPortalHook.includes('enabled = true') && appPortalHook.includes('enabled: Boolean(organizationId) && enabled'),
@@ -71,6 +72,11 @@ assert(
 assert(
   svixProvider.includes('useWebhookAppPortalAccessQuery(selectedOrganization?.id, Boolean(svixApplicationId))'),
   'SvixProvider should not request app portal access until initialization status has a Svix application id.',
+)
+
+assert(
+  runtimePatch.includes('IFRAME-RESIZER') && runtimePatch.includes('iframe-resizer upgrade notice'),
+  'Runtime patch should suppress the iframe-resizer upgrade notice emitted by the bundled dependency.',
 )
 
 console.log('Daytona dashboard console cleanup guards passed')

@@ -83,7 +83,7 @@ import {
   type AiModelProvider,
 } from '@/lib/ai-models';
 import { getSandboxPreviewPort, getSandboxRuntime, useSandbox, type SandboxFile } from '@/hooks/useSandbox';
-import { getSandboxPopoutUrl, shouldKeepSandboxOpenAfterStartError } from '@/lib/sandbox-files';
+import { getSandboxPopoutUrl, shouldKeepSandboxOpenAfterStartError, stripFileContentPlaceholders } from '@/lib/sandbox-files';
 
 // --- Utils ---
 function cn(...inputs: ClassValue[]) {
@@ -2374,6 +2374,7 @@ export default function AgenticDevPage() {
 
       // Trim leading/trailing whitespace but preserve internal structure
       fileContent = fileContent.replace(/^\n+/, '').replace(/\n+$/, '\n');
+      fileContent = stripFileContentPlaceholders(fileContent);
 
       // Validate file content is not empty or placeholder
       const trimmedContent = fileContent.trim();
@@ -2530,7 +2531,7 @@ COMMON ERROR PATTERNS TO CHECK:
 - React errors: hooks rules, missing keys, invalid children → check component structure
 
 OUTPUT FORMAT:
-- You MUST output the complete code inside [FILE: path/to/file.ext] FULL_CONTENT [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
+- You MUST output the complete code between [FILE: path/to/file.ext] and [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
 - Delete files using [DELETE_FILE: path/to/file.ext] tags ONLY when needed.
 
 CRITICAL RULES:
@@ -2774,7 +2775,7 @@ YOUR RESPONSIBILITIES (DO ONLY THESE):
 - Create/update/delete files EXACTLY as specified in the Architect's plan
 ${fileManagementInstruction}
 OUTPUT FORMAT:
-- You MUST output the complete code inside [FILE: path/to/file.ext] FULL_CONTENT [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
+- You MUST output the complete code between [FILE: path/to/file.ext] and [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
 - Delete files using [DELETE_FILE: path/to/file.ext] tags ONLY when the Architect's plan explicitly calls for deletion. If replacing a file, use the [FILE] tag, do not just delete it.
 - Provide a brief summary of what you implemented at the end
 
@@ -2861,7 +2862,7 @@ ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
         ? ''
         : `
 FILE OPERATIONS:
-- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
+- Create/Update: [FILE: path/to/file.ext] complete file content [/FILE]
 - Delete: [DELETE_FILE: path/to/file.ext]
 `;
 
@@ -3472,7 +3473,37 @@ ${context}`;
     const q = query(collection(db, `projects/${currentProject.id}/files`), orderBy('path', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fList = snapshot.docs.map(d => d.data() as ProjectFile);
-      setFiles(fList);
+      const filesToRepair: ProjectFile[] = [];
+      const repairedFiles = fList.map((file) => {
+        const content = stripFileContentPlaceholders(file.content);
+        if (content === file.content) return file;
+
+        const repairedFile = { ...file, content };
+        filesToRepair.push(repairedFile);
+        return repairedFile;
+      });
+
+      if (filesToRepair.length > 0) {
+        void Promise.all(filesToRepair.map((file) =>
+          updateDoc(doc(db, `projects/${currentProject.id}/files`, file.id), {
+            content: file.content,
+            lastModified: Timestamp.now(),
+          })
+        )).catch((err) => {
+          console.error('[FilesListener] Failed to repair generated file placeholders:', err);
+        });
+      }
+
+      setFiles(repairedFiles);
+      setSelectedFile(prev => {
+        if (!prev) return prev;
+        const cleanedContent = stripFileContentPlaceholders(prev.content);
+        if (cleanedContent === prev.content) return prev;
+        const repairedSelectedFile = repairedFiles.find(file => file.id === prev.id);
+        if (!repairedSelectedFile) return prev;
+        setFileContent(currentContent => stripFileContentPlaceholders(currentContent));
+        return repairedSelectedFile;
+      });
       setFilesLoadedProjectId(currentProject.id);
     }, (err) => handleDataStoreError(err, OperationType.LIST, `projects/${currentProject.id}/files`));
     return () => unsubscribe();
