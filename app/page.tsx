@@ -2528,9 +2528,9 @@ COMMON ERROR PATTERNS TO CHECK:
 - Network errors: failed to fetch → check URLs, CORS, network connectivity
 - React errors: hooks rules, missing keys, invalid children → check component structure
 
-FILE OPERATIONS:
-- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
-- Delete: [DELETE_FILE: path/to/file.ext]
+OUTPUT FORMAT:
+- You MUST output the complete code inside [FILE: path/to/file.ext] FULL_CONTENT [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
+- Delete files using [DELETE_FILE: path/to/file.ext] tags ONLY when needed.
 
 CRITICAL RULES:
 1. ALWAYS provide COMPLETE file content - never use placeholders like "// ... existing code"
