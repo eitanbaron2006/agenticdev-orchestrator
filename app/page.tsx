@@ -1479,7 +1479,10 @@ const OrchestrationAccordion = memo(({
   activeAgentName,
   index,
   onToggle,
-  onAction
+  onAction,
+  onRetry,
+  onRestore,
+  streamingMessage
 }: {
   group: OrchestrationGroup;
   isExpanded: boolean;
@@ -1489,6 +1492,9 @@ const OrchestrationAccordion = memo(({
   index: number;
   onToggle: () => void;
   onAction?: (type: string) => void;
+  onRetry?: (prompt: string) => void;
+  onRestore?: (groupId: string) => void;
+  streamingMessage?: { role: string; content: string } | null;
 }) => {
   const previewSource = group.request?.content || group.responses[0]?.content || '';
   const preview = getMessagePreview(previewSource) || (group.kind === 'request' ? 'No request content.' : 'System activity');
@@ -1552,7 +1558,31 @@ const OrchestrationAccordion = memo(({
             <div className="border-t border-white/10 p-4 md:p-5 space-y-5 bg-black/20">
               {group.request && (
                 <div className="space-y-2">
-                  <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-white/35">Requirement</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-white/35">Requirement</div>
+                    <div className="flex items-center gap-2">
+                      {onRestore && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onRestore(group.id); }}
+                          className="text-[10px] font-mono px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-white/60 hover:text-white transition-colors flex items-center gap-1"
+                          title="Restore files to the state after this requirement"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Restore
+                        </button>
+                      )}
+                      {onRetry && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onRetry(group.request!.content); }}
+                          className="text-[10px] font-mono px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-white/60 hover:text-white transition-colors flex items-center gap-1"
+                          title="Retry this requirement as a new prompt"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <MessageBubble message={group.request} onAction={onAction} />
                 </div>
               )}
@@ -1569,11 +1599,28 @@ const OrchestrationAccordion = memo(({
               )}
 
               {isRunning && (
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 border-dashed animate-pulse">
-                  <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                  <span className="text-xs font-mono opacity-50">
-                    Agent <span className="text-accent">{activeAgentName || 'Orchestrator'}</span> is processing...
-                  </span>
+                <div className="space-y-3">
+                  {streamingMessage && streamingMessage.content ? (
+                    <div className="rounded-xl bg-white/[0.03] border border-accent/20 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5">
+                        <Loader2 className="w-3 h-3 text-accent animate-spin" />
+                        <span className="text-[10px] font-mono text-accent/80 uppercase tracking-wider">{streamingMessage.role}</span>
+                        <span className="text-[10px] font-mono text-white/30">streaming...</span>
+                      </div>
+                      <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar">
+                        <pre className="whitespace-pre-wrap break-words text-xs font-mono text-white/70 leading-relaxed">
+                          {streamingMessage.content}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 border-dashed animate-pulse">
+                      <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                      <span className="text-xs font-mono opacity-50">
+                        Agent <span className="text-accent">{activeAgentName || 'Orchestrator'}</span> is processing...
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1843,6 +1890,10 @@ export default function AgenticDevPage() {
   const [isSandboxTerminalExpanded, setIsSandboxTerminalExpanded] = useState(true);
   const [isSandboxConsoleExpanded, setIsSandboxConsoleExpanded] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<{
+    role: string;
+    content: string;
+  } | null>(null);
   const lastNotifiedErrorCount = useRef(0);
 
   // Daytona Sandbox State
@@ -2126,7 +2177,13 @@ export default function AgenticDevPage() {
         model: model || currentProjectAiModel,
       }),
     });
-    const payload = await response.json();
+    let payload: any;
+    try {
+      const rawText = await response.text();
+      payload = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      throw new Error(`AI API returned invalid JSON (HTTP ${response.status}). The response may have timed out or been empty.`);
+    }
 
     if (!response.ok) {
       throw new Error(payload.error || 'AI request failed.');
@@ -2135,26 +2192,182 @@ export default function AgenticDevPage() {
     return typeof payload.text === 'string' ? payload.text : '';
   }, [currentProjectAiModel]);
 
+  const streamAiText = useCallback(async ({
+    prompt,
+    systemInstruction,
+    model,
+    onChunk,
+  }: {
+    prompt: string;
+    systemInstruction?: string;
+    model?: string;
+    onChunk?: (accumulated: string) => void;
+  }): Promise<string> => {
+    const response = await fetch('/api/ai/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({
+        prompt,
+        systemInstruction,
+        model: model || currentProjectAiModel,
+      }),
+    });
+
+    if (!response.ok) {
+      let errorMsg = `AI stream error (HTTP ${response.status})`;
+      try {
+        const errBody = await response.json();
+        errorMsg = errBody.error || errorMsg;
+      } catch { /* ignore */ }
+      throw new Error(errorMsg);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No stream body returned');
+
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
+    let streamDone = false;
+    let streamError: string | null = null;
+
+    while (!streamDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const payloadStr = trimmed.slice(6);
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(payloadStr);
+        } catch {
+          // Skip malformed SSE lines (not valid JSON)
+          continue;
+        }
+
+        if (parsed.error) {
+          streamError = parsed.error;
+          streamDone = true;
+          break;
+        }
+
+        if (parsed.done) {
+          fullText = parsed.fullText || fullText;
+          streamDone = true;
+          break;
+        }
+
+        if (parsed.text) {
+          fullText += parsed.text;
+          onChunk?.(fullText);
+        }
+      }
+    }
+
+    if (streamError) {
+      throw new Error(streamError);
+    }
+
+    if (!fullText.trim()) {
+      throw new Error('AI returned an empty response (stream produced no text).');
+    }
+
+    return fullText;
+  }, [currentProjectAiModel]);
+
   const parseAndSaveFiles = async (content: string, projectId: string) => {
-    const fileRegex = /\[FILE: (.*?)\]([\s\S]*?)\[\/FILE\]/g;
-    const deleteRegex = /\[DELETE_FILE: (.*?)\]/g;
+    // Clean up common AI formatting artifacts around file tags before parsing
+    let cleanedContent = content
+      .replace(/\*\*\[FILE:/g, '[FILE:')
+      .replace(/\*\*\[\/FILE\]\*\*/g, '[/FILE]')
+      .replace(/\*\*\[DELETE_FILE:/g, '[DELETE_FILE:')
+      .replace(/`\[FILE:/g, '[FILE:')
+      .replace(/`\[\/FILE\]`/g, '[/FILE]')
+      .replace(/`\[DELETE_FILE:/g, '[DELETE_FILE:');
+
+    const deleteRegex = /\[DELETE_FILE:\s*(.*?)\s*\]/g;
     let match;
     let filesSaved = 0;
     let filesDeleted = 0;
 
-    while ((match = fileRegex.exec(content)) !== null) {
-      const path = match[1].trim();
-      let fileContent = match[2];
-      
+    console.log(`[parseAndSaveFiles] Parsing content for project ${projectId} (${cleanedContent.length} chars)`);
+
+    // --- FILE EXTRACTION ---
+    // Pass 1: Try strict regex with [/FILE] closing tags
+    const strictRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)\[\/FILE\]/g;
+    const fileEntries: { path: string; rawContent: string }[] = [];
+
+    while ((match = strictRegex.exec(cleanedContent)) !== null) {
+      fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
+    }
+
+    // Pass 2: If strict found nothing, use fallback that matches between [FILE:] boundaries
+    // This handles AIs that omit [/FILE] closing tags
+    if (fileEntries.length === 0) {
+      console.log(`[parseAndSaveFiles] No [/FILE] closing tags found, trying fallback parser...`);
+      const fallbackRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)(?=\[FILE:\s|\[DELETE_FILE:\s|$)/g;
+      while ((match = fallbackRegex.exec(cleanedContent)) !== null) {
+        fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
+      }
+      if (fileEntries.length > 0) {
+        console.log(`[parseAndSaveFiles] Fallback parser found ${fileEntries.length} file(s)`);
+      }
+    }
+
+    // Process each extracted file entry
+    let usedFallback = false;
+    const truncatedFiles: string[] = [];
+
+    // Check if we used the fallback parser (no [/FILE] tags)
+    if (fileEntries.length > 0) {
+      const hasClosingTags = cleanedContent.includes('[/FILE]');
+      usedFallback = !hasClosingTags;
+    }
+
+    for (let idx = 0; idx < fileEntries.length; idx++) {
+      const entry = fileEntries[idx];
+      const path = entry.path.replace(/`/g, '');
+      let fileContent = entry.rawContent;
+
+      console.log(`[parseAndSaveFiles] Processing file: "${path}" (${fileContent.length} chars raw)`);
+
+      // Detect truncated file: last file from fallback parser with unclosed code fence
+      if (usedFallback && idx === fileEntries.length - 1) {
+        const fenceCount = (fileContent.match(/```/g) || []).length;
+        if (fenceCount % 2 !== 0) {
+          // Odd number of ``` means unclosed code fence = truncated response
+          console.warn(`[parseAndSaveFiles] File "${path}" appears TRUNCATED (unclosed code fence). Skipping save.`);
+          truncatedFiles.push(path);
+          continue;
+        }
+      }
+
       // Strip markdown code block formatting if present
       if (fileContent.trim().startsWith('```')) {
         const lines = fileContent.trim().split('\n');
         if (lines.length > 1) {
-          lines.shift(); // Remove opening ```
+          lines.shift(); // Remove opening ```lang
           if (lines[lines.length - 1].trim() === '```') {
             lines.pop(); // Remove closing ```
           }
           fileContent = lines.join('\n');
+        }
+      }
+
+      // Also strip trailing summary text after closing ``` (from fallback parser)
+      const closingFenceIndex = fileContent.lastIndexOf('\n```');
+      if (closingFenceIndex > 0) {
+        const afterFence = fileContent.substring(closingFenceIndex + 4).trim();
+        if (afterFence.length > 0 && !afterFence.startsWith('[') && !afterFence.startsWith('<')) {
+          fileContent = fileContent.substring(0, closingFenceIndex);
         }
       }
 
@@ -2164,11 +2377,11 @@ export default function AgenticDevPage() {
       // Validate file content is not empty or placeholder
       const trimmedContent = fileContent.trim();
       if (trimmedContent.length === 0) {
-        console.warn(`Skipping empty file: ${path}`);
+        console.warn(`[parseAndSaveFiles] Skipping empty file: ${path}`);
         continue;
       }
       if (trimmedContent === '// ... existing code ...' || trimmedContent === '// rest of code' || trimmedContent === '// ... rest of file ...') {
-        console.warn(`Skipping placeholder file: ${path}`);
+        console.warn(`[parseAndSaveFiles] Skipping placeholder file: ${path}`);
         continue;
       }
 
@@ -2185,23 +2398,36 @@ export default function AgenticDevPage() {
           lastModified: Timestamp.now()
         });
         filesSaved++;
+        console.log(`[parseAndSaveFiles] Saved file: ${path} (${fileContent.length} chars)`);
       } catch (err) {
+        console.error(`[parseAndSaveFiles] Failed to save file: ${path}`, err);
         handleDataStoreError(err, OperationType.CREATE, `projects/${projectId}/files/${fileId}`);
       }
     }
 
-    while ((match = deleteRegex.exec(content)) !== null) {
-      const path = match[1].trim();
+    // --- DELETE EXTRACTION ---
+    while ((match = deleteRegex.exec(cleanedContent)) !== null) {
+      const path = match[1].trim().replace(/`/g, '');
       const fileId = btoa(path).replace(/=/g, '');
+      console.log(`[parseAndSaveFiles] Found DELETE_FILE tag: "${path}"`);
       try {
         await deleteDoc(doc(db, `projects/${projectId}/files`, fileId));
         filesDeleted++;
+        console.log(`[parseAndSaveFiles] Deleted file: ${path}`);
       } catch (err) {
+        console.error(`[parseAndSaveFiles] Failed to delete file: ${path}`, err);
         handleDataStoreError(err, OperationType.DELETE, `projects/${projectId}/files/${fileId}`);
       }
     }
 
-    return { filesSaved, filesDeleted };
+    console.log(`[parseAndSaveFiles] Done: ${filesSaved} files saved, ${filesDeleted} files deleted, ${truncatedFiles.length} truncated`);
+
+    if (filesSaved === 0 && filesDeleted === 0 && truncatedFiles.length === 0) {
+      console.warn(`[parseAndSaveFiles] No file operations found in content.`);
+      console.warn(`[parseAndSaveFiles] Content preview: ${cleanedContent.substring(0, 500)}`);
+    }
+
+    return { filesSaved, filesDeleted, truncatedFiles };
   };
 
   const triggerDebuggerProposal = useCallback(async () => {
@@ -2497,139 +2723,413 @@ ${context}`;
         ? `\nAssigned Skills:\n${agentSkills.map(s => `- ${s.name}: ${s.content}`).join('\n')}`
         : '';
 
-      const agentRoleInstructions: Record<string, string> = {
-        'Architect': `You are the ARCHITECT Agent (Nexus-7). Your role is to plan and design the system architecture.
+      // Detect if user is requesting a completely different project vs modifying existing
+      const existingFilesList = files.length > 0 
+        ? files.map(f => f.path).join(', ')
+        : 'No existing files';
 
-RESPONSIBILITIES:
+      const fileManagementInstruction = files.length > 0
+        ? `
+FILE MANAGEMENT - IMPORTANT:
+The project currently has these files: ${existingFilesList}
+
+- If the user's request is a MODIFICATION or ENHANCEMENT to the existing project, only modify the files that need changes and keep all other files as they are.
+- If the user's request is for a COMPLETELY DIFFERENT application (e.g., existing files are for a "todo app" but user now asks for a "calculator"), you MUST use [DELETE_FILE: path] for ALL existing files that are no longer relevant, then create all new files with [FILE: path] tags.
+- Use your judgment: if the request clearly relates to the existing code, it is a modification. If it is an entirely different application, clean up old files first.
+`
+        : '';
+
+      const agentRoleInstructions: Record<string, string> = {
+        'Architect': `You are the ARCHITECT Agent (Nexus-7). Your ONLY role is to plan and design the system architecture. You are a PLANNER, not an implementer.
+
+YOUR RESPONSIBILITIES (DO ONLY THESE):
 - Analyze the user's request and break it down into clear architectural decisions
 - Define the file structure, component hierarchy, and data flow
 - Specify which technologies, libraries, and patterns to use
-- Create a clear plan that the Developer agent can follow
+- Create a clear, detailed plan that the Developer agent will follow to write the actual code
 - Consider edge cases, error handling, and scalability
+- If the user is requesting a completely different project from existing files, explicitly state that the old files should be removed and list them
 
 OUTPUT FORMAT:
-- Provide a clear architectural plan as text
-- If you create or update files, use [FILE: path] tags with COMPLETE file content
-- Focus on planning; leave implementation details to the Developer agent
-- Be specific about component names, file paths, and data structures`,
+- Provide a clear architectural plan as TEXT ONLY
+- List the files that need to be created/modified/deleted
+- Describe what each file should contain (components, functions, data structures)
+- Be specific about component names, file paths, and data structures
 
-        'Developer': `You are the DEVELOPER Agent (Cortex-X). Your role is to implement the code based on the Architect's plan.
+ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
+- Do NOT output any [FILE: ...] or [/FILE] tags - you do NOT write code
+- Do NOT output any [DELETE_FILE: ...] tags - you do NOT manage files directly
+- Do NOT write implementation code, HTML, CSS, or JavaScript
+- Do NOT generate any file content whatsoever
+- Your output is a TEXT PLAN ONLY - the Developer agent will implement it`,
 
-RESPONSIBILITIES:
+        'Developer': `You are the DEVELOPER Agent (Cortex-X). Your ONLY role is to implement code based on the Architect's plan that appears in the context above.
+
+YOUR RESPONSIBILITIES (DO ONLY THESE):
+- Read the Architect's plan from the context and implement it precisely
 - Write clean, correct, production-quality code
-- Follow the Architect's plan precisely
-- Implement all functionality described in the user's request
 - Ensure all files are complete and work together
 - Handle errors and edge cases in code
+- Create/update/delete files EXACTLY as specified in the Architect's plan
+${fileManagementInstruction}
+OUTPUT FORMAT:
+- You MUST output the complete code inside [FILE: path/to/file.ext] FULL_CONTENT [/FILE] tags. ANY BARE CODE BLOCKS WILL BE IGNORED.
+- Delete files using [DELETE_FILE: path/to/file.ext] tags ONLY when the Architect's plan explicitly calls for deletion. If replacing a file, use the [FILE] tag, do not just delete it.
+- Provide a brief summary of what you implemented at the end
 
-STRICT RULES:
-- ONLY implement what was requested - do not add features the user did not ask for
+ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
+- Do NOT add features the user did not request
 - Do NOT change the project type or technology stack unless explicitly requested
+- Do NOT deviate from the Architect's plan
 - Every file you output must be COMPLETE - no placeholders, no "// ... rest of code", no truncation
-- Ensure all cross-file references (imports, links, paths) are correct
-- Verify your code mentally before outputting it`,
+- Ensure all cross-file references (imports, links, paths) are correct`,
 
-        'Designer': `You are the DESIGNER Agent (Aura-V). Your role is to enhance the visual design and user experience.
+        'Designer': `You are the DESIGNER Agent (Aura-V). Your ONLY role is to enhance the VISUAL DESIGN and styling of the EXISTING files created by the Developer agent.
 
-RESPONSIBILITIES:
-- Improve the visual styling, layout, and typography
+YOUR RESPONSIBILITIES (DO ONLY THESE):
+- Improve the visual styling, layout, and typography of the files created by the Developer
 - Ensure responsive design across screen sizes
 - Add smooth transitions and micro-interactions
 - Ensure color contrast and visual hierarchy
+- Enhance CSS, colors, fonts, spacing, animations
 
-STRICT RULES:
-- ONLY modify styling and visual elements - do NOT change functionality
+OUTPUT FORMAT:
+- ONLY output files you are CHANGING using [FILE: path] tags with the COMPLETE modified file content
+- Do NOT re-output files you did not change
+- At the end, provide a brief summary of your visual improvements
+
+ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
+- Do NOT change any JavaScript logic, functionality, or behavior
+- Do NOT add new features, buttons with new functionality, or interactive elements that do not exist
 - Do NOT remove or break existing features
-- Preserve all JavaScript logic and component structure
-- Only output files you are changing - do not re-output unchanged files
-- Use the project's existing CSS framework (Tailwind, vanilla CSS, etc.)`,
+- Do NOT create new files that do not already exist
+- Do NOT change the component structure, state management, or data flow
+- Do NOT delete any files
+- ONLY touch CSS, colors, fonts, spacing, animations, transitions, and visual layout`,
 
-        'QA': `You are the QA Agent (Sentinel-9). Your role is to review the implementation for quality and correctness.
+        'QA': `You are the QA Agent (Sentinel-9). Your ONLY role is to REVIEW existing code for bugs and fix them. The application has ALREADY been built by the Developer and Designer agents.
 
-RESPONSIBILITIES:
-- Review all generated code for bugs, errors, and security issues
-- Verify that the implementation matches the user's request exactly
-- Check for broken links, missing imports, and type errors
-- Validate that the preview will work correctly
-- Fix any issues you find
+YOUR RESPONSIBILITIES (DO ONLY THESE):
+- If there are no files to review (e.g., project is empty), simply state: "No files to review." and do nothing else.
+- Review all generated code for bugs, syntax errors, and runtime errors
+- Verify that the implementation matches the user's original request
+- Check for broken links, missing imports, incorrect paths, and type errors
+- Validate that cross-file references are correct (CSS links, script src, imports)
+- Check that the preview will work correctly in the browser
+- Fix ONLY the specific bugs you find
 
-STRICT RULES:
-- If you find issues, fix them by outputting corrected [FILE: path] tags
-- If no issues are found, confirm that the implementation is correct
-- Do NOT add new features or change existing functionality
-- Only fix bugs - do not refactor or "improve" working code
-- Be specific about what you checked and what you fixed`
+OUTPUT FORMAT:
+- First, list what you reviewed and what issues you found (if any)
+- If you find bugs, output the corrected files using [FILE: path] tags with COMPLETE fixed content
+- If NO issues are found, explicitly confirm: "All files reviewed. No bugs found. Implementation is correct."
+- At the end, provide a brief summary of bugs found and fixed
+
+ABSOLUTE RESTRICTIONS - YOU MUST NEVER DO ANY OF THESE:
+- Do NOT create the application from scratch or hallucinate initial requirements
+- Do NOT add new features or functionality
+- Do NOT refactor or "improve" working code
+- Do NOT change the visual design or styling (that is the Designer's job)
+- Do NOT restructure the project or create new files
+- Do NOT delete files unless they cause errors
+- ONLY fix actual bugs - broken code, missing references, syntax errors`
       };
 
       const roleInstruction = agentRoleInstructions[agent.role] || agent.description;
+
+      // Build role-specific prompts - each agent gets a different prompt appropriate to their role
+      let agentPrompt: string;
+      switch (agent.role) {
+        case 'Architect':
+          agentPrompt = `The user has requested the following. Create a detailed architectural plan for this request. Do NOT write any code or file content - only provide a text plan.\n\nUser Request: ${userPrompt}`;
+          break;
+        case 'Developer':
+          agentPrompt = `The Architect has created an architectural plan (see context above). Your job is to IMPLEMENT that plan by writing the actual code files. Follow the Architect's plan precisely.\n\nOriginal User Request: ${userPrompt}`;
+          break;
+        case 'Designer':
+          agentPrompt = `The Developer has created code files (see context above). Your job is to ENHANCE THE VISUAL DESIGN ONLY - improve CSS, colors, fonts, spacing, animations, and responsive layout. Do NOT change any functionality or logic.\n\nOriginal User Request: ${userPrompt}`;
+          break;
+        case 'QA':
+          agentPrompt = `The Developer and Designer have created and styled the project files (see context above). Your job is to REVIEW the code for bugs and fix any issues you find. Do NOT add features or restructure code.\n\nOriginal User Request: ${userPrompt}`;
+          break;
+        default:
+          agentPrompt = userPrompt;
+      }
+
+      // Architect should NOT have FILE OPERATIONS instructions since it does not write files
+      const fileOperationsBlock = agent.role === 'Architect' 
+        ? '' 
+        : `
+FILE OPERATIONS:
+- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
+- Delete: [DELETE_FILE: path/to/file.ext]
+`;
 
       const systemInstruction = `${roleInstruction}
 ${skillsContext}
 
 PROJECT TYPE: ${projectTypeConfig.name}
 ${projectTypeConfig.agentInstruction}
-
-FILE OPERATIONS:
-- Create/Update: [FILE: path/to/file.ext] FULL_FILE_CONTENT [/FILE]
-- Delete: [DELETE_FILE: path/to/file.ext]
-
+${fileOperationsBlock}
 CRITICAL RULES:
 1. NEVER use placeholders like "// ... existing code ..." or "// rest of file" - always provide COMPLETE file content
 2. NEVER change the project type (e.g., from Next.js to static HTML) unless the user explicitly asks
 3. NEVER add features the user did not request
 4. ALWAYS ensure files reference each other correctly (CSS links, script src, imports)
 5. At the end of your response, provide a brief summary of what you did
+6. STAY IN YOUR ROLE - only do what YOUR specific agent role requires, nothing else
 ${errorContext ? `\nERRORS FROM PREVIOUS AGENT:\n${errorContext}\nFix these issues in your response.\n` : ''}
 Current Context:
 ${context}`;
 
-      try {
-        const content = await generateAiText({
-          prompt: userPrompt,
-          systemInstruction,
-          attachments: i === 0 ? attachments : [],
-          model: currentProject.aiModel,
-        });
-        
-        // Validate that the agent didn't try to change project type
-        const lowerContent = content.toLowerCase();
-        const typeChangeWarnings: string[] = [];
-        if (projectType === 'nextjs' && (lowerContent.includes('static html') || lowerContent.includes('standalone html file') || lowerContent.includes('single html'))) {
-          typeChangeWarnings.push('Warning: Response appears to suggest converting to static HTML. This is a Next.js project - maintain Next.js structure.');
-        }
-        if (projectType === 'static-site' && (lowerContent.includes('package.json') || lowerContent.includes('next.config') || lowerContent.includes('npm install'))) {
-          typeChangeWarnings.push('Warning: Response appears to add Node.js/bundler files. This is a static site project - use only HTML/CSS/JS.');
-        }
-        
-        if (typeChangeWarnings.length > 0) {
-          errorContext = typeChangeWarnings.join('\n');
-        } else {
-          errorContext = '';
-        }
-        
-        await parseAndSaveFiles(content, currentProject.id);
+      const MAX_RETRIES = 3;
+      let agentSucceeded = false;
+      let orchestrationFailed = false;
 
-        const agentMsgId = Date.now().toString() + agent.role;
-        const agentMsg: Message = {
-          id: agentMsgId,
-          projectId: currentProject.id,
-          role: agent.role,
-          content: content,
-          timestamp: Timestamp.now()
-        };
-        await setDoc(doc(db, `projects/${currentProject.id}/messages`, agentMsgId), agentMsg);
-        
-        context += `[${agent.role}]: ${getMessagePreview(content)}\n\n`;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`Error with ${agent.role}:`, error);
-        errorContext = `Agent ${agent.role} encountered an error: ${errorMsg}`;
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        if (orchestrationFailed) break;
+        try {
+          // Start streaming — update streamingMessage on each chunk for live UI
+          setStreamingMessage({ role: agent.role, content: attempt > 1 ? `⏳ Retrying (attempt ${attempt}/${MAX_RETRIES})...\n` : '' });
+
+          const content = await streamAiText({
+            prompt: agentPrompt,
+            systemInstruction,
+            model: currentProject.aiModel,
+            onChunk: (accumulated) => {
+              setStreamingMessage({ role: agent.role, content: accumulated });
+            },
+          });
+
+          // Streaming complete — clear the live bubble
+          setStreamingMessage(null);
+          console.log(`[runOrchestration] ${agent.role} streaming complete: ${content.length} chars (attempt ${attempt})`);
+          
+          // Validate that the agent didn't try to change project type
+          const lowerContent = content.toLowerCase();
+          const typeChangeWarnings: string[] = [];
+          if (projectType === 'nextjs' && (lowerContent.includes('static html') || lowerContent.includes('standalone html file') || lowerContent.includes('single html'))) {
+            typeChangeWarnings.push('Warning: Response appears to suggest converting to static HTML. This is a Next.js project - maintain Next.js structure.');
+          }
+          if (projectType === 'static-site' && (lowerContent.includes('package.json') || lowerContent.includes('next.config') || lowerContent.includes('npm install'))) {
+            typeChangeWarnings.push('Warning: Response appears to add Node.js/bundler files. This is a static site project - use only HTML/CSS/JS.');
+          }
+          
+          if (typeChangeWarnings.length > 0) {
+            errorContext = typeChangeWarnings.join('\n');
+          } else {
+            errorContext = '';
+          }
+          
+          // Only parse and save files for agents that are allowed to output files (not Architect)
+          if (agent.role !== 'Architect') {
+            console.log(`[runOrchestration] Parsing files from ${agent.role} response (${content.length} chars)...`);
+            const result = await parseAndSaveFiles(content, currentProject.id);
+            console.log(`[runOrchestration] ${agent.role}: ${result.filesSaved} files saved, ${result.filesDeleted} files deleted`);
+
+            // Auto-switch to Files tab so user sees the changes in real-time
+            if (result.filesSaved > 0 || result.filesDeleted > 0) {
+              setActiveTab('files');
+            }
+
+            // Retry truncated files with a focused follow-up call
+            if (result.truncatedFiles.length > 0) {
+              for (const truncatedPath of result.truncatedFiles) {
+                console.log(`[runOrchestration] Retrying truncated file: ${truncatedPath}`);
+                try {
+                  const retryContent = await generateAiText({
+                    prompt: `Your previous response was cut off before the file "${truncatedPath}" was complete. Please output ONLY the complete content for this file. Use the exact format:\n\n[FILE: ${truncatedPath}]\n...complete file content...\n[/FILE]\n\nDo not include any other files, explanations, or commentary. Output ONLY this one file.`,
+                    systemInstruction: `You are completing a truncated file from a previous response. Output the COMPLETE file "${truncatedPath}" using [FILE: ${truncatedPath}] content [/FILE] tags. Nothing else.`,
+                    model: currentProject.aiModel,
+                  });
+                  const retryResult = await parseAndSaveFiles(retryContent, currentProject.id);
+                  if (retryResult.filesSaved > 0) {
+                    console.log(`[runOrchestration] Retry successful for: ${truncatedPath}`);
+                  } else {
+                    console.warn(`[runOrchestration] Retry failed for: ${truncatedPath} - file was not saved`);
+                  }
+                } catch (retryError) {
+                  console.error(`[runOrchestration] Retry error for ${truncatedPath}:`, retryError);
+                }
+              }
+            }
+          } else {
+            console.log(`[runOrchestration] Skipping file parsing for Architect (text plan only)`);
+          }
+
+          const agentMsgId = Date.now().toString() + agent.role;
+          const agentMsg: Message = {
+            id: agentMsgId,
+            projectId: currentProject.id,
+            role: agent.role,
+            content: content,
+            timestamp: Timestamp.now()
+          };
+          await setDoc(doc(db, `projects/${currentProject.id}/messages`, agentMsgId), agentMsg);
+          
+          context += `[${agent.role}]: ${getMessagePreview(content)}\n\n`;
+          agentSucceeded = true;
+          break; // Success — exit retry loop
+        } catch (error) {
+          setStreamingMessage(null);
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error(`[runOrchestration] Error with ${agent.role} (attempt ${attempt}/${MAX_RETRIES}):`, errorMsg);
+
+          if (attempt < MAX_RETRIES) {
+            // Wait before retrying (exponential backoff: 2s, 4s)
+            const waitMs = 2000 * attempt;
+            console.log(`[runOrchestration] Retrying ${agent.role} in ${waitMs}ms...`);
+            setStreamingMessage({ role: agent.role, content: `⚠️ Error: ${errorMsg}\n\n⏳ Retrying in ${waitMs / 1000}s... (attempt ${attempt + 1}/${MAX_RETRIES})` });
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+          } else {
+            // All retries exhausted — save the error as a visible message
+            errorContext = `Agent ${agent.role} failed after ${MAX_RETRIES} attempts: ${errorMsg}`;
+            orchestrationFailed = true;
+            try {
+              const errorMsgId = Date.now().toString() + agent.role + '_error';
+              const errorMessage: Message = {
+                id: errorMsgId,
+                projectId: currentProject.id,
+                role: agent.role,
+                content: `⚠️ **Error after ${MAX_RETRIES} attempts:** ${errorMsg}`,
+                timestamp: Timestamp.now()
+              };
+              await setDoc(doc(db, `projects/${currentProject.id}/messages`, errorMsgId), errorMessage);
+            } catch (saveErr) {
+              console.error(`[runOrchestration] Failed to save error message:`, saveErr);
+            }
+          }
+        }
+      }
+
+      if (orchestrationFailed) {
+        break; // Stop the entire orchestration if an agent fails permanently
       }
     }
 
     setIsProcessing(false);
     setProjectState({ status: 'completed', currentAgentIndex: -1 });
   };
+
+  const handleRetry = (prompt: string) => {
+    runOrchestration(prompt);
+  };
+
+  const handleRestore = useCallback(async (groupId: string) => {
+    if (!currentProject) return;
+    
+    // Find the target group
+    const targetGroupIndex = groupedMessages.findIndex(g => g.id === groupId);
+    if (targetGroupIndex === -1) return;
+
+    setIsProcessing(true);
+    try {
+      // Re-calculate the file state from all messages up to this group
+      const validMessages = [];
+      for (let i = 0; i <= targetGroupIndex; i++) {
+        const g = groupedMessages[i];
+        if (g.request) validMessages.push(g.request);
+        validMessages.push(...g.responses);
+      }
+      
+      const virtualFiles = new Map<string, any>(); // path -> content
+      
+      const fileRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)\[\/FILE\]/g;
+      const fallbackRegex = /\[FILE:\s*(.*?)\s*\]([\s\S]*?)(?=\[FILE:\s|\[DELETE_FILE:\s|$)/g;
+      const deleteRegex = /\[DELETE_FILE:\s*(.*?)\s*\]/g;
+      
+      for (const msg of validMessages) {
+        let content = msg.content
+          .replace(/\*\*\[FILE:/g, '[FILE:')
+          .replace(/\*\*\[\/FILE\]\*\*/g, '[/FILE]')
+          .replace(/\*\*\[DELETE_FILE:/g, '[DELETE_FILE:')
+          .replace(/`\[FILE:/g, '[FILE:')
+          .replace(/`\[\/FILE\]`/g, '[/FILE]')
+          .replace(/`\[DELETE_FILE:/g, '[DELETE_FILE:');
+          
+        let match;
+        const fileEntries = [];
+        
+        // Pass 1
+        while ((match = fileRegex.exec(content)) !== null) {
+          fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
+        }
+        
+        // Pass 2
+        if (fileEntries.length === 0) {
+          while ((match = fallbackRegex.exec(content)) !== null) {
+            fileEntries.push({ path: match[1].trim(), rawContent: match[2] });
+          }
+        }
+        
+        for (const entry of fileEntries) {
+          const path = entry.path.replace(/`/g, '');
+          let fileContent = entry.rawContent;
+          if (fileContent.trim().startsWith('```')) {
+            const lines = fileContent.trim().split('\n');
+            if (lines.length > 1) {
+              lines.shift();
+              if (lines[lines.length - 1].trim() === '```') lines.pop();
+              fileContent = lines.join('\n');
+            }
+          }
+          const closingFenceIndex = fileContent.lastIndexOf('\n```');
+          if (closingFenceIndex > 0) {
+            const afterFence = fileContent.substring(closingFenceIndex + 4).trim();
+            if (afterFence.length > 0 && !afterFence.startsWith('[') && !afterFence.startsWith('<')) {
+              fileContent = fileContent.substring(0, closingFenceIndex);
+            }
+          }
+          fileContent = fileContent.replace(/^\n+/, '').replace(/\n+$/, '\n');
+          if (fileContent.trim() !== '') {
+            virtualFiles.set(path, fileContent);
+          }
+        }
+        
+        while ((match = deleteRegex.exec(content)) !== null) {
+          const path = match[1].trim().replace(/`/g, '');
+          virtualFiles.delete(path);
+        }
+      }
+      
+      // 1. Delete all current files
+      const currentFilesQuery = query(collection(db, `projects/${currentProject.id}/files`));
+      const currentFilesSnap = await getDocs(currentFilesQuery);
+      
+      const deletePromises = currentFilesSnap.docs.map(docSnap => deleteDoc(doc(db, `projects/${currentProject.id}/files`, docSnap.id)));
+      await Promise.all(deletePromises);
+      
+      // 2. Write virtual files
+      const createPromises = Array.from(virtualFiles.entries()).map(([path, content]) => {
+        const fileId = btoa(path).replace(/=/g, '');
+        const language = path.split('.').pop() || 'plaintext';
+        return setDoc(doc(db, `projects/${currentProject.id}/files`, fileId), {
+          id: fileId,
+          projectId: currentProject.id,
+          path,
+          content,
+          language,
+          lastModified: Timestamp.now()
+        });
+      });
+      await Promise.all(createPromises);
+      
+      const restoreMsgId = Date.now().toString() + 'restore';
+      await setDoc(doc(db, `projects/${currentProject.id}/messages`, restoreMsgId), {
+        id: restoreMsgId,
+        projectId: currentProject.id,
+        role: 'System',
+        content: `🔄 Project files have been restored to the state after this request.`,
+        timestamp: Timestamp.now()
+      });
+
+      showToast('Project files restored successfully.', 'success');
+    } catch (err) {
+      console.error("Restore failed:", err);
+      showToast('Failed to restore files.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [currentProject, groupedMessages, showToast]);
 
   useEffect(() => {
     if (consoleEndRef.current) {
@@ -3879,6 +4379,9 @@ ${context}`;
                         onAction={(type) => {
                           if (type === 'runDebugger') runDebugger();
                         }}
+                        onRetry={handleRetry}
+                        onRestore={handleRestore}
+                        streamingMessage={latestGroupId === group.id ? streamingMessage : null}
                       />
                     ))}
                   </div>
